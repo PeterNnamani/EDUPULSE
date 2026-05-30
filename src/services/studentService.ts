@@ -1,0 +1,451 @@
+import { supabase } from '@/lib/supabase';
+import { normalizePhone, comparePhones, extractParentPhones, validatePhone } from '@/utils/phoneUtils';
+
+interface CreateStudentRequest {
+    schoolId: string;
+    firstName: string;
+    lastName: string;
+    middleName?: string;
+    gender: 'male' | 'female';
+    dateOfBirth?: string;
+    classId: string;
+    admissionNumber?: string;
+    stateOfOrigin?: string;
+    fatherName?: string;
+    fatherPhone?: string;
+    fatherEmail?: string;
+    fatherOccupation?: string;
+    motherName?: string;
+    motherPhone?: string;
+    motherEmail?: string;
+    motherOccupation?: string;
+    guardianName?: string;
+    guardianPhone?: string;
+    guardianEmail?: string;
+    guardianRelationship?: string;
+}
+
+interface CreateStudentResponse {
+    success: boolean;
+    data?: {
+        studentId: string;
+        firstName: string;
+        lastName: string;
+        parentId?: string;
+    };
+    error?: string;
+}
+
+interface StudentData {
+    id: string;
+    student_id: string;
+    first_name: string;
+    last_name: string;
+    middle_name?: string;
+    gender: string;
+    date_of_birth?: string;
+    class_id?: string;
+    status: string;
+    admission_number?: string;
+    state_of_origin?: string;
+}
+
+interface StudentWithParent extends StudentData {
+    parents?: Array<{
+        id: string;
+        father_name?: string;
+        mother_name?: string;
+        guardian_name?: string;
+        primary_phone?: string;
+        father_phone?: string;
+        mother_phone?: string;
+        guardian_phone?: string;
+    }>;
+}
+
+/**
+ * Create a new student and register parent/guardian
+ * Links student to parent via student_parents table
+ */
+export async function createStudentWithParent(
+    request: CreateStudentRequest
+): Promise<CreateStudentResponse> {
+    try {
+        // Step 1: Generate Student ID
+        const { data: existingStudents, error: countError } = await supabase
+            .from('students')
+            .select('student_id')
+            .eq('school_id', request.schoolId);
+
+        if (countError) {
+            console.error('Error fetching existing students:', countError);
+            throw countError;
+        }
+
+        const studentNumber = (existingStudents?.length || 0) + 1;
+        const studentId = `STU${String(studentNumber).padStart(6, '0')}`;
+
+        // Step 2: Create Student Record
+        const { data: newStudent, error: studentError } = await supabase
+            .from('students')
+            .insert([
+                {
+                    school_id: request.schoolId,
+                    student_id: studentId,
+                    first_name: request.firstName,
+                    last_name: request.lastName,
+                    middle_name: request.middleName || null,
+                    gender: request.gender,
+                    date_of_birth: request.dateOfBirth || null,
+                    class_id: request.classId,
+                    admission_number: request.admissionNumber || null,
+                    state_of_origin: request.stateOfOrigin || null,
+                    status: 'active',
+                    admission_date: new Date().toISOString().split('T')[0],
+                },
+            ])
+            .select()
+            .single();
+
+        if (studentError) {
+            console.error('Error creating student:', studentError);
+            return {
+                success: false,
+                error: studentError.message || 'Failed to create student',
+            };
+        }
+
+        // Step 3: Create or Link Parent(s)
+        let parentId: string | undefined;
+
+        // Determine primary phone (prefer father, then mother, then guardian)
+        const primaryPhone =
+            request.fatherPhone || request.motherPhone || request.guardianPhone;
+
+        if (primaryPhone) {
+            // Normalize the phone number
+            const normalizedPhone = normalizePhone(primaryPhone);
+
+            if (!normalizedPhone) {
+                console.warn('Invalid phone number provided:', primaryPhone);
+                return {
+                    success: false,
+                    error: 'Invalid phone number format',
+                };
+            }
+
+            console.log(`[STUDENT_CREATION] Normalized phone: ${primaryPhone} -> ${normalizedPhone}`);
+
+            // Check if parent already exists with ANY matching phone field
+            const { data: allParents, error: parentListError } = await supabase
+                .from('parents')
+                .select('id, primary_phone, father_phone, mother_phone, guardian_phone')
+                .eq('school_id', request.schoolId);
+
+            if (parentListError && parentListError.code !== 'PGRST116') {
+                console.error('Error checking parents:', parentListError);
+                throw parentListError;
+            }
+
+            // Find parent with matching phone across all phone fields
+            let existingParent = null;
+            if (allParents) {
+                for (const parent of allParents) {
+                    const parentPhones = extractParentPhones(parent);
+                    if (parentPhones.includes(normalizedPhone)) {
+                        existingParent = parent;
+                        console.log(`[STUDENT_CREATION] Found existing parent: ${parent.id}`);
+                        break;
+                    }
+                }
+            }
+
+            if (existingParent) {
+                // Parent already exists, use existing ID
+                parentId = existingParent.id;
+            } else {
+                // Create new parent record
+                const { data: newParent, error: createParentError } = await supabase
+                    .from('parents')
+                    .insert([
+                        {
+                            school_id: request.schoolId,
+                            father_name: request.fatherName || null,
+                            father_phone: normalizedPhone && request.fatherPhone ? normalizedPhone : null,
+                            father_email: request.fatherEmail || null,
+                            father_occupation: request.fatherOccupation || null,
+                            mother_name: request.motherName || null,
+                            mother_phone: normalizedPhone && request.motherPhone ? normalizedPhone : null,
+                            mother_email: request.motherEmail || null,
+                            mother_occupation: request.motherOccupation || null,
+                            guardian_name: request.guardianName || null,
+                            guardian_phone: normalizedPhone && request.guardianPhone ? normalizedPhone : null,
+                            guardian_email: request.guardianEmail || null,
+                            guardian_relationship: request.guardianRelationship || null,
+                            primary_phone: normalizedPhone,
+                            email: request.fatherEmail || request.motherEmail || request.guardianEmail || null,
+                            is_active: true,
+                        },
+                    ])
+                    .select()
+                    .single();
+
+                if (createParentError) {
+                    console.error('Error creating parent:', createParentError);
+                    return {
+                        success: false,
+                        error: createParentError.message || 'Failed to create parent record',
+                    };
+                }
+
+                parentId = newParent.id;
+                console.log(`[STUDENT_CREATION] Created new parent: ${parentId}`);
+            }
+
+            // Step 4: Link Student to Parent(s)
+            if (parentId) {
+                // Determine relationship type
+                let relationshipType: 'father' | 'mother' | 'guardian' = 'guardian';
+                if (request.fatherPhone === primaryPhone) {
+                    relationshipType = 'father';
+                } else if (request.motherPhone === primaryPhone) {
+                    relationshipType = 'mother';
+                }
+
+                // Check if relationship already exists
+                const { data: existingRelationship, error: checkRelError } = await supabase
+                    .from('student_parents')
+                    .select('id')
+                    .eq('student_id', newStudent.id)
+                    .eq('parent_id', parentId)
+                    .maybeSingle();
+
+                if (checkRelError && checkRelError.code !== 'PGRST116') {
+                    console.error('Error checking relationship:', checkRelError);
+                }
+
+                if (!existingRelationship) {
+                    const { error: linkError } = await supabase
+                        .from('student_parents')
+                        .insert([
+                            {
+                                student_id: newStudent.id,
+                                parent_id: parentId,
+                                relationship: relationshipType,
+                                is_primary: true,
+                            },
+                        ]);
+
+                    if (linkError && linkError.code !== '23505') {
+                        // 23505 is unique constraint violation - skip if already exists
+                        console.error('Error linking student to parent:', linkError);
+                        return {
+                            success: false,
+                            error: linkError.message || 'Failed to link student to parent',
+                        };
+                    }
+
+                    console.log(
+                        `[STUDENT_CREATION] Created relationship: student=${newStudent.id}, parent=${parentId}, type=${relationshipType}`
+                    );
+                } else {
+                    console.log(
+                        `[STUDENT_CREATION] Relationship already exists: student=${newStudent.id}, parent=${parentId}`
+                    );
+                }
+            }
+        }
+
+        return {
+            success: true,
+            data: {
+                studentId: studentId,
+                firstName: request.firstName,
+                lastName: request.lastName,
+                parentId: parentId,
+            },
+        };
+    } catch (error) {
+        console.error('Student creation error:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to create student',
+        };
+    }
+}
+
+/**
+ * Fetch all students for a school
+ */
+export async function getStudents(schoolId: string): Promise<StudentData[]> {
+    try {
+        const { data, error } = await supabase
+            .from('students')
+            .select('id, student_id, first_name, last_name, middle_name, gender, date_of_birth, class_id, status, admission_number, state_of_origin')
+            .eq('school_id', schoolId)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Error fetching students:', error);
+            return [];
+        }
+
+        return data || [];
+    } catch (error) {
+        console.error('Get students error:', error);
+        return [];
+    }
+}
+
+/**
+ * Fetch children for a parent by phone number
+ * Returns all students linked to a parent with that phone
+ * Handles phone normalization for flexible matching
+ */
+export async function getChildrenByParentPhone(
+    schoolId: string,
+    phone: string
+): Promise<StudentWithParent[]> {
+    try {
+        // Normalize the input phone
+        const normalizedInputPhone = normalizePhone(phone);
+
+        if (!normalizedInputPhone) {
+            console.warn('[GET_CHILDREN] Invalid phone number provided:', phone);
+            return [];
+        }
+
+        console.log(`[GET_CHILDREN] Looking up parent with phone: ${phone} (normalized: ${normalizedInputPhone})`);
+
+        // Get all parents in the school
+        const { data: allParents, error: parentsError } = await supabase
+            .from('parents')
+            .select('id, primary_phone, father_phone, mother_phone, guardian_phone, school_id')
+            .eq('school_id', schoolId);
+
+        if (parentsError) {
+            console.error('[GET_CHILDREN] Error fetching parents:', parentsError);
+            return [];
+        }
+
+        if (!allParents || allParents.length === 0) {
+            console.log('[GET_CHILDREN] No parents found in school');
+            return [];
+        }
+
+        // Find parent with matching phone across all phone fields
+        let parentId: string | null = null;
+        for (const parent of allParents) {
+            const parentPhones = extractParentPhones(parent);
+            if (parentPhones.includes(normalizedInputPhone)) {
+                parentId = parent.id;
+                console.log(`[GET_CHILDREN] Found matching parent: ${parentId}`);
+                break;
+            }
+        }
+
+        if (!parentId) {
+            console.log('[GET_CHILDREN] No parent found with matching phone');
+            return [];
+        }
+
+        // Get all students linked to this parent
+        const { data: students, error: studentsError } = await supabase
+            .from('student_parents')
+            .select(
+                `
+        student_id,
+        relationship,
+        students(
+          id,
+          student_id,
+          first_name,
+          last_name,
+          middle_name,
+          gender,
+          date_of_birth,
+          class_id,
+          status,
+          admission_number,
+          state_of_origin
+        )
+      `
+            )
+            .eq('parent_id', parentId);
+
+        if (studentsError) {
+            console.error('[GET_CHILDREN] Error fetching children:', studentsError);
+            return [];
+        }
+
+        const result =
+            students?.map((item: any) => ({
+                id: item.students.id,
+                student_id: item.students.student_id,
+                first_name: item.students.first_name,
+                last_name: item.students.last_name,
+                middle_name: item.students.middle_name,
+                gender: item.students.gender,
+                date_of_birth: item.students.date_of_birth,
+                class_id: item.students.class_id,
+                status: item.students.status,
+                admission_number: item.students.admission_number,
+                state_of_origin: item.students.state_of_origin,
+            })) || [];
+
+        console.log(`[GET_CHILDREN] Found ${result.length} children for parent`);
+        return result;
+    } catch (error) {
+        console.error('[GET_CHILDREN] Get children error:', error);
+        return [];
+    }
+}
+
+/**
+ * Update student information
+ */
+export async function updateStudent(
+    studentId: string,
+    updates: Partial<{
+        firstName: string;
+        lastName: string;
+        middleName: string;
+        gender: string;
+        dateOfBirth: string;
+        classId: string;
+        status: string;
+    }>
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const updateData: Record<string, any> = {};
+
+        if (updates.firstName) updateData.first_name = updates.firstName;
+        if (updates.lastName) updateData.last_name = updates.lastName;
+        if (updates.middleName) updateData.middle_name = updates.middleName;
+        if (updates.gender) updateData.gender = updates.gender;
+        if (updates.dateOfBirth) updateData.date_of_birth = updates.dateOfBirth;
+        if (updates.classId) updateData.class_id = updates.classId;
+        if (updates.status) updateData.status = updates.status;
+
+        const { error } = await supabase
+            .from('students')
+            .update(updateData)
+            .eq('id', studentId);
+
+        if (error) {
+            console.error('Error updating student:', error);
+            return {
+                success: false,
+                error: error.message || 'Failed to update student',
+            };
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error('Update student error:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to update student',
+        };
+    }
+}

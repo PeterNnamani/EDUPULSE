@@ -36,6 +36,14 @@ export interface User {
   fullName: string;
   phone?: string;
   photoUrl?: string;
+  children?: Array<{
+    id: string;
+    studentId: string;
+    firstName: string;
+    lastName: string;
+    gender: string;
+    classId?: string;
+  }>;
 }
 
 export interface AuthState {

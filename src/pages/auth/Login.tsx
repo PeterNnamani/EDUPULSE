@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, ArrowRight, User, Lock, Phone } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { supabase } from '@/lib/supabase';
+import { adminLogin, staffLogin, parentLogin } from '@/services/authService';
 import type { UserRole } from '@/types';
 
 export default function Login() {
@@ -40,80 +40,7 @@ export default function Login() {
     }
   };
 
-  const handleDemoLogin = () => {
-    setError('');
-    setLoading(true);
-    
-    // Simulate a small delay for better UX
-    setTimeout(() => {
-      const demoUsers = {
-        admin: {
-          id: 'demo-admin-001',
-          email: 'admin@demo.school',
-          role: 'admin' as UserRole,
-          schoolId: 'demo-school-001',
-          staffId: 'ADM0001',
-          fullName: 'Admin Demo User',
-          phone: '+234 800 000 0001',
-          photoUrl: null,
-        },
-        teacher: {
-          id: 'demo-teacher-001',
-          email: 'teacher@demo.school',
-          role: 'teacher' as UserRole,
-          schoolId: 'demo-school-001',
-          staffId: 'TCH0001',
-          fullName: 'Teacher Demo User',
-          phone: '+234 800 000 0002',
-          photoUrl: null,
-        },
-        principal: {
-          id: 'demo-principal-001',
-          email: 'principal@demo.school',
-          role: 'principal' as UserRole,
-          schoolId: 'demo-school-001',
-          staffId: 'PRN0001',
-          fullName: 'Principal Demo User',
-          phone: '+234 800 000 0003',
-          photoUrl: null,
-        },
-        counselor: {
-          id: 'demo-counselor-001',
-          email: 'counselor@demo.school',
-          role: 'counselor' as UserRole,
-          schoolId: 'demo-school-001',
-          staffId: 'CNS0001',
-          fullName: 'Counselor Demo User',
-          phone: '+234 800 000 0004',
-          photoUrl: null,
-        },
-        finance: {
-          id: 'demo-finance-001',
-          email: 'finance@demo.school',
-          role: 'finance' as UserRole,
-          schoolId: 'demo-school-001',
-          staffId: 'FIN0001',
-          fullName: 'Finance Officer Demo User',
-          phone: '+234 800 000 0005',
-          photoUrl: null,
-        },
-        parent: {
-          id: 'demo-parent-001',
-          role: 'parent' as UserRole,
-          schoolId: 'demo-school-001',
-          fullName: 'Parent Demo User',
-          phone: '+234 800 000 0006',
-          photoUrl: null,
-        },
-      };
 
-      const demoUser = demoUsers[selectedRole as keyof typeof demoUsers];
-      if (demoUser) {
-        setUser(demoUser);
-      }
-      setLoading(false);
-    }, 500);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,76 +49,64 @@ export default function Login() {
 
     try {
       if (selectedRole === 'admin') {
-        const { data, error: authError } = await supabase.auth.signInWithPassword({
-          email: form.email,
-          password: form.password,
-        });
+        const response = await adminLogin(form.email, form.password);
 
-        if (authError) throw authError;
+        if (!response.success) {
+          setError(response.error || 'Login failed');
+          setLoading(false);
+          return;
+        }
 
-        if (data.user) {
-          const { data: staffData } = await supabase
-            .from('staff')
-            .select('*, schools(*)')
-            .eq('email', form.email)
-            .maybeSingle();
-
-          if (staffData) {
-            setUser({
-              id: data.user.id,
-              email: form.email,
-              role: 'admin',
-              schoolId: staffData.school_id,
-              staffId: staffData.staff_id,
-              fullName: staffData.full_name,
-              phone: staffData.phone,
-              photoUrl: staffData.photo_url,
-            });
-          }
+        if (response.user) {
+          setUser({
+            id: response.user.id,
+            email: response.user.email,
+            role: 'admin',
+            schoolId: response.user.schoolId,
+            staffId: response.user.staffId,
+            fullName: response.user.fullName,
+            phone: response.user.phone,
+            photoUrl: response.user.photoUrl,
+          });
         }
       } else if (selectedRole === 'parent') {
-        const { data: parentData, error: parentError } = await supabase
-          .from('parents')
-          .select('*, schools(*)')
-          .eq('primary_phone', form.phone)
-          .maybeSingle();
+        const response = await parentLogin(form.phone);
 
-        if (parentError) throw parentError;
+        if (!response.success) {
+          setError(response.error || 'Login failed');
+          setLoading(false);
+          return;
+        }
 
-        if (parentData) {
+        if (response.user) {
           setUser({
-            id: parentData.id,
+            id: response.user.id,
             role: 'parent',
-            schoolId: parentData.school_id,
-            fullName: parentData.father_name || parentData.mother_name || parentData.guardian_name || 'Parent',
-            phone: form.phone,
+            schoolId: response.user.schoolId,
+            fullName: response.user.fullName,
+            phone: response.user.phone,
+            children: response.user.children,
           });
-        } else {
-          setError('No account found with this phone number');
         }
       } else {
-        const { data: staffData, error: staffError } = await supabase
-          .from('staff')
-          .select('*, schools(*)')
-          .eq('staff_id', form.staffId)
-          .eq('pin', form.pin)
-          .eq('role', selectedRole)
-          .maybeSingle();
+        const response = await staffLogin(form.staffId, form.pin, selectedRole);
 
-        if (staffError) throw staffError;
+        if (!response.success) {
+          setError(response.error || 'Login failed');
+          setLoading(false);
+          return;
+        }
 
-        if (staffData) {
+        if (response.user) {
           setUser({
-            id: staffData.id,
+            id: response.user.id,
             role: selectedRole as UserRole,
-            schoolId: staffData.school_id,
-            staffId: staffData.staff_id,
-            fullName: staffData.full_name,
-            phone: staffData.phone,
-            photoUrl: staffData.photo_url,
+            schoolId: response.user.schoolId,
+            staffId: response.user.staffId,
+            fullName: response.user.fullName,
+            phone: response.user.phone,
+            photoUrl: response.user.photoUrl,
           });
-        } else {
-          setError('Invalid Staff ID or PIN');
         }
       }
     } catch (err) {
@@ -359,22 +274,6 @@ export default function Login() {
               ) : (
                 <>
                   Sign In
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDemoLogin}
-              disabled={loading}
-              className="btn-secondary w-full flex items-center justify-center gap-2 border border-blue-500 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  Demo Login
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

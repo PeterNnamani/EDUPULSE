@@ -1,31 +1,244 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Filter, MoreVertical, Edit2, Trash2, UserPlus, Download, Upload } from 'lucide-react';
+import { Plus, Search, Filter, MoreVertical, Edit2, Trash2, UserPlus, Download, Upload, Copy, Check } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { supabase } from '@/lib/supabase';
-import type { Student } from '@/lib/supabase';
+import { getStudents, createStudentWithParent, updateStudent } from '@/services/studentService';
+import { getClasses } from '@/services/classService';
+
+interface StudentForm {
+  firstName: string;
+  lastName: string;
+  middleName: string;
+  gender: string;
+  dateOfBirth: string;
+  classId: string;
+  admissionNumber: string;
+  stateOfOrigin: string;
+  fatherName: string;
+  fatherPhone: string;
+  fatherEmail: string;
+  fatherOccupation: string;
+  motherName: string;
+  motherPhone: string;
+  motherEmail: string;
+  motherOccupation: string;
+  guardianName: string;
+  guardianPhone: string;
+  guardianEmail: string;
+  guardianRelationship: string;
+}
+
+interface EditingStudent {
+  id: string;
+  studentId: string;
+  firstName: string;
+  lastName: string;
+  middleName: string;
+  gender: string;
+  dateOfBirth: string;
+  classId: string;
+  status: string;
+}
 
 export default function StudentManagement() {
   const { user } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [students, setStudents] = useState<Student[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
+  const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<EditingStudent | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successData, setSuccessData] = useState<{ studentId: string; firstName: string; lastName: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [formData, setFormData] = useState<StudentForm>({
+    firstName: '',
+    lastName: '',
+    middleName: '',
+    gender: '',
+    dateOfBirth: '',
+    classId: '',
+    admissionNumber: '',
+    stateOfOrigin: '',
+    fatherName: '',
+    fatherPhone: '',
+    fatherEmail: '',
+    fatherOccupation: '',
+    motherName: '',
+    motherPhone: '',
+    motherEmail: '',
+    motherOccupation: '',
+    guardianName: '',
+    guardianPhone: '',
+    guardianEmail: '',
+    guardianRelationship: '',
+  });
 
-  // Mock students for demo
-  const mockStudents = [
-    { id: '1', student_id: 'STU000001', first_name: 'John', last_name: 'Doe', middle_name: 'Michael', class_id: 'SS1A', gender: 'male', status: 'active' },
-    { id: '2', student_id: 'STU000002', first_name: 'Jane', last_name: 'Smith', middle_name: '', class_id: 'SS1A', gender: 'female', status: 'active' },
-    { id: '3', student_id: 'STU000003', first_name: 'Emeka', last_name: 'Brown', middle_name: 'James', class_id: 'SS2A', gender: 'male', status: 'active' },
-    { id: '4', student_id: 'STU000004', first_name: 'Chioma', last_name: 'Okonkwo', middle_name: '', class_id: 'SS2A', gender: 'female', status: 'active' },
-    { id: '5', student_id: 'STU000005', first_name: 'Ahmed', last_name: 'Muhammad', middle_name: 'Yusuf', class_id: 'SS3A', gender: 'male', status: 'active' },
+  const nigerinanStates = [
+    'Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno',
+    'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'Gombe', 'Imo', 'Jigawa',
+    'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger',
+    'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara', 'FCT'
   ];
 
-  const classes = ['SS1A', 'SS1B', 'SS2A', 'SS2B', 'SS3A', 'SS3B'];
   const statuses = ['active', 'graduated', 'withdrawn', 'suspended'];
 
-  const filteredStudents = mockStudents.filter((student) => {
+  // Load students and classes on mount
+  useEffect(() => {
+    if (user?.schoolId) {
+      loadData();
+    }
+  }, [user?.schoolId]);
+
+  const loadData = async () => {
+    if (!user?.schoolId) return;
+
+    setLoading(true);
+    try {
+      const [studentsData, classesData] = await Promise.all([
+        getStudents(user.schoolId),
+        getClasses(user.schoolId),
+      ]);
+      setStudents(studentsData);
+      setClasses(classesData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      firstName: '',
+      lastName: '',
+      middleName: '',
+      gender: '',
+      dateOfBirth: '',
+      classId: '',
+      admissionNumber: '',
+      stateOfOrigin: '',
+      fatherName: '',
+      fatherPhone: '',
+      fatherEmail: '',
+      fatherOccupation: '',
+      motherName: '',
+      motherPhone: '',
+      motherEmail: '',
+      motherOccupation: '',
+      guardianName: '',
+      guardianPhone: '',
+      guardianEmail: '',
+      guardianRelationship: '',
+    });
+  };
+
+  const handleAddStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user?.schoolId) return;
+
+    setLoading(true);
+    try {
+      const result = await createStudentWithParent({
+        schoolId: user.schoolId,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        middleName: formData.middleName || undefined,
+        gender: formData.gender as 'male' | 'female',
+        dateOfBirth: formData.dateOfBirth || undefined,
+        classId: formData.classId,
+        admissionNumber: formData.admissionNumber || undefined,
+        stateOfOrigin: formData.stateOfOrigin || undefined,
+        fatherName: formData.fatherName || undefined,
+        fatherPhone: formData.fatherPhone || undefined,
+        fatherEmail: formData.fatherEmail || undefined,
+        fatherOccupation: formData.fatherOccupation || undefined,
+        motherName: formData.motherName || undefined,
+        motherPhone: formData.motherPhone || undefined,
+        motherEmail: formData.motherEmail || undefined,
+        motherOccupation: formData.motherOccupation || undefined,
+        guardianName: formData.guardianName || undefined,
+        guardianPhone: formData.guardianPhone || undefined,
+        guardianEmail: formData.guardianEmail || undefined,
+        guardianRelationship: formData.guardianRelationship || undefined,
+      });
+
+      if (result.success && result.data) {
+        setSuccessData({
+          studentId: result.data.studentId,
+          firstName: result.data.firstName,
+          lastName: result.data.lastName,
+        });
+        setShowSuccessModal(true);
+        setShowAddModal(false);
+        resetForm();
+        await loadData();
+      } else {
+        alert(result.error || 'Failed to create student');
+      }
+    } catch (error) {
+      console.error('Error creating student:', error);
+      alert('Error creating student. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStudent) return;
+
+    setLoading(true);
+    try {
+      const result = await updateStudent(editingStudent.id, {
+        firstName: editingStudent.firstName,
+        lastName: editingStudent.lastName,
+        middleName: editingStudent.middleName,
+        gender: editingStudent.gender,
+        dateOfBirth: editingStudent.dateOfBirth,
+        classId: editingStudent.classId,
+        status: editingStudent.status,
+      });
+
+      if (result.success) {
+        setShowEditModal(false);
+        setEditingStudent(null);
+        await loadData();
+      } else {
+        alert(result.error || 'Failed to update student');
+      }
+    } catch (error) {
+      console.error('Error updating student:', error);
+      alert('Error updating student. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openEditModal = (student: any) => {
+    setEditingStudent({
+      id: student.id,
+      studentId: student.student_id,
+      firstName: student.first_name,
+      lastName: student.last_name,
+      middleName: student.middle_name || '',
+      gender: student.gender,
+      dateOfBirth: student.date_of_birth || '',
+      classId: student.class_id,
+      status: student.status,
+    });
+    setShowEditModal(true);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const filteredStudents = students.filter((student) => {
     const matchesSearch = `${student.first_name} ${student.last_name} ${student.student_id}`
       .toLowerCase()
       .includes(searchQuery.toLowerCase());
@@ -77,7 +290,7 @@ export default function StudentManagement() {
           >
             <option value="">All Classes</option>
             {classes.map((cls) => (
-              <option key={cls} value={cls}>{cls}</option>
+              <option key={cls.id} value={cls.id}>{cls.name}</option>
             ))}
           </select>
           <button className="btn-secondary flex items-center gap-2">
@@ -139,17 +352,16 @@ export default function StudentManagement() {
                   </td>
                   <td className="px-4 py-3 capitalize">{student.gender}</td>
                   <td className="px-4 py-3">
-                    <span className={`badge ${
-                      student.status === 'active' ? 'badge-success' :
+                    <span className={`badge ${student.status === 'active' ? 'badge-success' :
                       student.status === 'graduated' ? 'badge-info' :
-                      'badge-danger'
-                    }`}>
+                        'badge-danger'
+                      }`}>
                       {student.status}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors">
+                      <button onClick={() => openEditModal(student)} className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors">
                         <Edit2 className="w-4 h-4" />
                       </button>
                       <button className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-red-500">
@@ -166,22 +378,8 @@ export default function StudentManagement() {
         {/* Pagination */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-border dark:border-gray-800">
           <p className="text-sm text-secondary-text">
-            Showing {filteredStudents.length} of {mockStudents.length} students
+            Showing {filteredStudents.length} of {students.length} students
           </p>
-          <div className="flex items-center gap-2">
-            <button className="px-3 py-1.5 border border-border rounded-lg text-sm hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors">
-              Previous
-            </button>
-            <button className="px-3 py-1.5 bg-black dark:bg-white text-white dark:text-black rounded-lg text-sm">
-              1
-            </button>
-            <button className="px-3 py-1.5 border border-border rounded-lg text-sm hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors">
-              2
-            </button>
-            <button className="px-3 py-1.5 border border-border rounded-lg text-sm hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors">
-              Next
-            </button>
-          </div>
         </div>
       </motion.div>
 
@@ -191,7 +389,7 @@ export default function StudentManagement() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-2xl bg-white dark:bg-dark-bg rounded-2xl shadow-xl overflow-hidden"
+            className="w-full max-w-4xl bg-white dark:bg-dark-bg rounded-2xl shadow-xl overflow-hidden"
           >
             <div className="p-6 border-b border-border dark:border-gray-800">
               <div className="flex items-center justify-between">
@@ -206,23 +404,323 @@ export default function StudentManagement() {
                 </button>
               </div>
             </div>
-            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleAddStudent} className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
+              {/* Student Info */}
+              <div>
+                <h3 className="text-sm font-semibold mb-4">Student Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="label mb-1.5 block">First Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.firstName}
+                      onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                      className="input-field"
+                      placeholder="Enter first name"
+                    />
+                  </div>
+                  <div>
+                    <label className="label mb-1.5 block">Last Name *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formData.lastName}
+                      onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                      className="input-field"
+                      placeholder="Enter last name"
+                    />
+                  </div>
+                  <div>
+                    <label className="label mb-1.5 block">Middle Name</label>
+                    <input
+                      type="text"
+                      value={formData.middleName}
+                      onChange={(e) => setFormData({ ...formData, middleName: e.target.value })}
+                      className="input-field"
+                      placeholder="Enter middle name"
+                    />
+                  </div>
+                  <div>
+                    <label className="label mb-1.5 block">Gender *</label>
+                    <select
+                      required
+                      value={formData.gender}
+                      onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                      className="input-field"
+                    >
+                      <option value="">Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label mb-1.5 block">Date of Birth</label>
+                    <input
+                      type="date"
+                      value={formData.dateOfBirth}
+                      onChange={(e) => setFormData({ ...formData, dateOfBirth: e.target.value })}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label className="label mb-1.5 block">Class *</label>
+                    <select
+                      required
+                      value={formData.classId}
+                      onChange={(e) => setFormData({ ...formData, classId: e.target.value })}
+                      className="input-field"
+                    >
+                      <option value="">Select class</option>
+                      {classes.map((cls) => (
+                        <option key={cls.id} value={cls.id}>{cls.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label mb-1.5 block">Admission Number</label>
+                    <input
+                      type="text"
+                      value={formData.admissionNumber}
+                      onChange={(e) => setFormData({ ...formData, admissionNumber: e.target.value })}
+                      className="input-field"
+                      placeholder="Enter admission number"
+                    />
+                  </div>
+                  <div>
+                    <label className="label mb-1.5 block">State of Origin</label>
+                    <select
+                      value={formData.stateOfOrigin}
+                      onChange={(e) => setFormData({ ...formData, stateOfOrigin: e.target.value })}
+                      className="input-field"
+                    >
+                      <option value="">Select state</option>
+                      {nigerinanStates.map((state) => (
+                        <option key={state} value={state}>{state}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Parent Information */}
+              <div className="border-t border-border dark:border-gray-800 pt-6">
+                <h3 className="text-sm font-semibold mb-4">Parent/Guardian Information</h3>
+                <div className="space-y-6">
+                  {/* Father */}
+                  <div>
+                    <h4 className="text-xs font-semibold text-secondary-text mb-3 uppercase">Father</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Father's Name</label>
+                        <input
+                          type="text"
+                          value={formData.fatherName}
+                          onChange={(e) => setFormData({ ...formData, fatherName: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="Enter name"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Phone</label>
+                        <input
+                          type="tel"
+                          value={formData.fatherPhone}
+                          onChange={(e) => setFormData({ ...formData, fatherPhone: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="08012345678"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Email</label>
+                        <input
+                          type="email"
+                          value={formData.fatherEmail}
+                          onChange={(e) => setFormData({ ...formData, fatherEmail: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="email@example.com"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Occupation</label>
+                        <input
+                          type="text"
+                          value={formData.fatherOccupation}
+                          onChange={(e) => setFormData({ ...formData, fatherOccupation: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="Occupation"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mother */}
+                  <div>
+                    <h4 className="text-xs font-semibold text-secondary-text mb-3 uppercase">Mother</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Mother's Name</label>
+                        <input
+                          type="text"
+                          value={formData.motherName}
+                          onChange={(e) => setFormData({ ...formData, motherName: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="Enter name"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Phone</label>
+                        <input
+                          type="tel"
+                          value={formData.motherPhone}
+                          onChange={(e) => setFormData({ ...formData, motherPhone: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="08012345678"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Email</label>
+                        <input
+                          type="email"
+                          value={formData.motherEmail}
+                          onChange={(e) => setFormData({ ...formData, motherEmail: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="email@example.com"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Occupation</label>
+                        <input
+                          type="text"
+                          value={formData.motherOccupation}
+                          onChange={(e) => setFormData({ ...formData, motherOccupation: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="Occupation"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Guardian */}
+                  <div>
+                    <h4 className="text-xs font-semibold text-secondary-text mb-3 uppercase">Guardian (if applicable)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Guardian's Name</label>
+                        <input
+                          type="text"
+                          value={formData.guardianName}
+                          onChange={(e) => setFormData({ ...formData, guardianName: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="Enter name"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Phone</label>
+                        <input
+                          type="tel"
+                          value={formData.guardianPhone}
+                          onChange={(e) => setFormData({ ...formData, guardianPhone: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="08012345678"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Email</label>
+                        <input
+                          type="email"
+                          value={formData.guardianEmail}
+                          onChange={(e) => setFormData({ ...formData, guardianEmail: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="email@example.com"
+                        />
+                      </div>
+                      <div>
+                        <label className="label mb-1.5 block text-xs">Relationship</label>
+                        <input
+                          type="text"
+                          value={formData.guardianRelationship}
+                          onChange={(e) => setFormData({ ...formData, guardianRelationship: e.target.value })}
+                          className="input-field text-sm"
+                          placeholder="e.g. Aunt, Uncle, Grandparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-border dark:border-gray-800 pt-6 flex items-center justify-end gap-3">
+                <button type="button" onClick={() => setShowAddModal(false)} className="btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" disabled={loading} className="btn-primary flex items-center gap-2">
+                  <UserPlus className="w-4 h-4" />
+                  {loading ? 'Creating...' : 'Add Student'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Edit Student Modal */}
+      {showEditModal && editingStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-2xl bg-white dark:bg-dark-bg rounded-2xl shadow-xl overflow-hidden"
+          >
+            <div className="p-6 border-b border-border dark:border-gray-800">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold">Edit Student</h2>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <form onSubmit={handleEditStudent} className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="label mb-1.5 block">First Name</label>
-                  <input className="input-field" placeholder="Enter first name" />
+                  <input
+                    type="text"
+                    value={editingStudent.firstName}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, firstName: e.target.value })}
+                    className="input-field"
+                  />
                 </div>
                 <div>
                   <label className="label mb-1.5 block">Last Name</label>
-                  <input className="input-field" placeholder="Enter last name" />
+                  <input
+                    type="text"
+                    value={editingStudent.lastName}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, lastName: e.target.value })}
+                    className="input-field"
+                  />
                 </div>
                 <div>
                   <label className="label mb-1.5 block">Middle Name</label>
-                  <input className="input-field" placeholder="Enter middle name (optional)" />
+                  <input
+                    type="text"
+                    value={editingStudent.middleName}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, middleName: e.target.value })}
+                    className="input-field"
+                  />
                 </div>
                 <div>
                   <label className="label mb-1.5 block">Gender</label>
-                  <select className="input-field">
+                  <select
+                    value={editingStudent.gender}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, gender: e.target.value })}
+                    className="input-field"
+                  >
                     <option value="">Select gender</option>
                     <option value="male">Male</option>
                     <option value="female">Female</option>
@@ -230,63 +728,90 @@ export default function StudentManagement() {
                 </div>
                 <div>
                   <label className="label mb-1.5 block">Date of Birth</label>
-                  <input type="date" className="input-field" />
+                  <input
+                    type="date"
+                    value={editingStudent.dateOfBirth}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, dateOfBirth: e.target.value })}
+                    className="input-field"
+                  />
                 </div>
                 <div>
                   <label className="label mb-1.5 block">Class</label>
-                  <select className="input-field">
+                  <select
+                    value={editingStudent.classId}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, classId: e.target.value })}
+                    className="input-field"
+                  >
                     <option value="">Select class</option>
                     {classes.map((cls) => (
-                      <option key={cls} value={cls}>{cls}</option>
+                      <option key={cls.id} value={cls.id}>{cls.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="label mb-1.5 block">Admission Number</label>
-                  <input className="input-field" placeholder="Enter admission number" />
-                </div>
-                <div>
-                  <label className="label mb-1.5 block">State of Origin</label>
-                  <select className="input-field">
-                    <option value="">Select state</option>
-                    <option value="Lagos">Lagos</option>
-                    <option value="Oyo">Oyo</option>
-                    {/* Add other states */}
+                  <label className="label mb-1.5 block">Status</label>
+                  <select
+                    value={editingStudent.status}
+                    onChange={(e) => setEditingStudent({ ...editingStudent, status: e.target.value })}
+                    className="input-field"
+                  >
+                    {statuses.map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              <div>
-                <label className="label mb-2 block">Parent/Guardian Information</label>
-                <div className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card border border-border dark:border-gray-800 space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="label mb-1 block text-xs">Father's Name</label>
-                      <input className="input-field text-sm" placeholder="Enter name" />
-                    </div>
-                    <div>
-                      <label className="label mb-1 block text-xs">Father's Phone</label>
-                      <input className="input-field text-sm" placeholder="08012345678" />
-                    </div>
-                    <div>
-                      <label className="label mb-1 block text-xs">Mother's Name</label>
-                      <input className="input-field text-sm" placeholder="Enter name" />
-                    </div>
-                    <div>
-                      <label className="label mb-1 block text-xs">Mother's Phone</label>
-                      <input className="input-field text-sm" placeholder="08012345678" />
-                    </div>
-                  </div>
+              <div className="border-t border-border dark:border-gray-800 pt-6 flex items-center justify-end gap-3">
+                <button type="button" onClick={() => setShowEditModal(false)} className="btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" disabled={loading} className="btn-primary">
+                  {loading ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {showSuccessModal && successData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md bg-white dark:bg-dark-bg rounded-2xl shadow-xl overflow-hidden"
+          >
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold mb-2">Student Created Successfully!</h2>
+              <p className="text-secondary-text mb-6">
+                {successData.firstName} {successData.lastName} has been registered with ID {successData.studentId}
+              </p>
+
+              <div className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card mb-6 text-left">
+                <p className="text-xs text-secondary-text mb-2">Student ID:</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 font-mono text-sm">{successData.studentId}</code>
+                  <button
+                    onClick={() => copyToClipboard(successData.studentId)}
+                    className="p-2 rounded-lg hover:bg-border transition-colors"
+                  >
+                    {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
-            </div>
-            <div className="p-6 border-t border-border dark:border-gray-800 flex items-center justify-end gap-3">
-              <button onClick={() => setShowAddModal(false)} className="btn-secondary">
-                Cancel
-              </button>
-              <button onClick={() => setShowAddModal(false)} className="btn-primary">
-                <UserPlus className="w-4 h-4 mr-2" />
-                Add Student
+
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full btn-primary"
+              >
+                Done
               </button>
             </div>
           </motion.div>

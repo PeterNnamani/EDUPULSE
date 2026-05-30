@@ -10,7 +10,7 @@ const groq = new Groq({
     apiKey: Deno.env.get("GROQ_API_KEY"),
 });
 
-Deno.serve(async (req) => {
+Deno.serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
         return new Response("ok", { headers: corsHeaders });
     }
@@ -62,9 +62,10 @@ Deno.serve(async (req) => {
             }
         );
     } catch (error) {
-        console.error("Chat Error:", error.message || error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error("Chat Error:", errorMessage);
         return new Response(
-            JSON.stringify({ error: error.message || "Unknown error" }),
+            JSON.stringify({ error: errorMessage || "Unknown error" }),
             {
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
                 status: 500,
