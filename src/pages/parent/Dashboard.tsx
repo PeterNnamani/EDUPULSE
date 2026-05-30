@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CalendarDays, ClipboardList, AlertTriangle, BookOpen, TrendingUp, MessageSquare, User, ChevronDown, Loader } from 'lucide-react';
+import { CalendarDays, ClipboardList, AlertTriangle, BookOpen, TrendingUp, ArrowRight, User, ChevronDown, Loader } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
 
@@ -26,6 +27,7 @@ interface Child {
 
 export default function ParentDashboard() {
   const { user } = useAppStore();
+  const navigate = useNavigate();
   const [selectedChildId, setSelectedChildId] = useState<string>('');
   const [childStats, setChildStats] = useState<ChildStats>({});
   const [loading, setLoading] = useState(true);
@@ -35,12 +37,6 @@ export default function ParentDashboard() {
   const pendingRequestRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
   const fetchTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  const upcomingEvents = [
-    { event: 'Parent-Teacher Meeting', date: 'Jan 20, 2025', time: '10:00 AM' },
-    { event: 'Mid-Term Exams Begin', date: 'Feb 1, 2025', time: '9:00 AM' },
-    { event: 'Sports Day', date: 'Feb 15, 2025', time: '8:00 AM' },
-  ];
 
   // Set default selected child - only runs once when children load
   useEffect(() => {
@@ -214,13 +210,6 @@ export default function ParentDashboard() {
       }
     };
   }, []);
-
-  const getRecentActivities = () => [
-    { type: 'attendance', message: 'Student was present today', time: 'Today, 8:15 AM' },
-    { type: 'grade', message: 'Mathematics test scored: 75/100', time: 'Yesterday' },
-    { type: 'assignment', message: 'English assignment submitted', time: '2 days ago' },
-    { type: 'behaviour', message: 'Merit: Excellent class participation', time: '3 days ago' },
-  ];
 
   const selectedChild = user?.children?.find((c: Child) => c.id === selectedChildId);
   const stats = childStats[selectedChildId] || {
@@ -411,7 +400,7 @@ export default function ParentDashboard() {
               </div>
               <div className="flex-1">
                 <h2 className="text-2xl font-bold">{selectedChild?.firstName} {selectedChild?.lastName}</h2>
-                <p className="text-secondary-text">{selectedChild?.classId || 'Class TBD'} • Student ID: {selectedChild?.studentId}</p>
+                <p className="text-secondary-text">Student ID: {selectedChild?.studentId}</p>
               </div>
             </div>
 
@@ -437,60 +426,63 @@ export default function ParentDashboard() {
             </div>
           </motion.div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Recent Activities */}
-            <motion.div
+          {/* Quick Action Links */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <motion.button
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="card"
+              onClick={() => navigate('/parent/attendance')}
+              className="card hover:shadow-lg transition-all group cursor-pointer"
             >
-              <h3 className="font-semibold mb-4">Recent Activities</h3>
-              <div className="space-y-3">
-                {getRecentActivities().map((activity, index) => (
-                  <div key={index} className="flex items-start gap-3 p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
-                    <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${activity.type === 'attendance' ? 'bg-blue-100 dark:bg-blue-900/30' :
-                        activity.type === 'grade' ? 'bg-green-100 dark:bg-green-900/30' :
-                          activity.type === 'assignment' ? 'bg-purple-100 dark:bg-purple-900/30' :
-                            'bg-yellow-100 dark:bg-yellow-900/30'
-                        }`}
-                    >
-                      {activity.type === 'attendance' && <CalendarDays className="w-4 h-4 text-blue-600" />}
-                      {activity.type === 'grade' && <ClipboardList className="w-4 h-4 text-green-600" />}
-                      {activity.type === 'assignment' && <BookOpen className="w-4 h-4 text-purple-600" />}
-                      {activity.type === 'behaviour' && <AlertTriangle className="w-4 h-4 text-yellow-600" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{activity.message}</p>
-                      <p className="text-xs text-secondary-text">{activity.time}</p>
-                    </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CalendarDays className="w-6 h-6 text-blue-500 group-hover:scale-110 transition-transform" />
+                  <div className="text-left">
+                    <p className="font-semibold">View Attendance</p>
+                    <p className="text-sm text-secondary-text">See full attendance records</p>
                   </div>
-                ))}
+                </div>
+                <ArrowRight className="w-5 h-5 text-secondary-text group-hover:translate-x-1 transition-transform" />
               </div>
-            </motion.div>
+            </motion.button>
 
-            {/* Upcoming Events */}
-            <motion.div
+            <motion.button
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="card"
+              transition={{ delay: 0.1 }}
+              onClick={() => navigate('/parent/grades')}
+              className="card hover:shadow-lg transition-all group cursor-pointer"
             >
-              <h3 className="font-semibold mb-4">Upcoming Events</h3>
-              <div className="space-y-3">
-                {upcomingEvents.map((event, index) => (
-                  <div key={index} className="flex items-center gap-4 p-3 rounded-xl border border-border dark:border-gray-800">
-                    <div className="w-12 h-12 rounded-lg bg-secondary-bg dark:bg-dark-card flex flex-col items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-medium">{event.date.split(' ')[1]}</span>
-                      <span className="text-lg font-bold">{event.date.split(' ')[0].replace(',', '')}</span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{event.event}</p>
-                      <p className="text-xs text-secondary-text">{event.time}</p>
-                    </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <BookOpen className="w-6 h-6 text-green-500 group-hover:scale-110 transition-transform" />
+                  <div className="text-left">
+                    <p className="font-semibold">View Grades</p>
+                    <p className="text-sm text-secondary-text">See all academic grades</p>
                   </div>
-                ))}
+                </div>
+                <ArrowRight className="w-5 h-5 text-secondary-text group-hover:translate-x-1 transition-transform" />
               </div>
-            </motion.div>
+            </motion.button>
+
+            <motion.button
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+              onClick={() => navigate('/parent/assignments')}
+              className="card hover:shadow-lg transition-all group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <ClipboardList className="w-6 h-6 text-purple-500 group-hover:scale-110 transition-transform" />
+                  <div className="text-left">
+                    <p className="font-semibold">View Assignments</p>
+                    <p className="text-sm text-secondary-text">See all assignments</p>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-secondary-text group-hover:translate-x-1 transition-transform" />
+              </div>
+            </motion.button>
           </div>
         </>
       )}

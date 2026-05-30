@@ -26,6 +26,9 @@ import InterventionsPage from '@/pages/interventions/InterventionsPage';
 import ReportsPage from '@/pages/reports/ReportsPage';
 import SettingsPage from '@/pages/settings/SettingsPage';
 import SubscriptionsPage from '@/pages/admin/SubscriptionsPage';
+import ParentAttendance from '@/pages/parent/ParentAttendance';
+import ParentGrades from '@/pages/parent/ParentGrades';
+import ParentAssignments from '@/pages/parent/ParentAssignments';
 import Layout from '@/components/Layout';
 
 function AppContent() {
@@ -104,9 +107,17 @@ function AppContent() {
         <Route path="/counselor" element={<CounselorDashboard />} />
         <Route path="/finance" element={<FinanceDashboard />} />
         <Route path="/parent" element={<ParentDashboard />} />
-        <Route path="/attendance" element={<AttendancePage />} />
-        <Route path="/grades" element={<GradesPage />} />
-        <Route path="/assignments" element={<AssignmentsPage />} />
+
+        {/* Teacher/Staff Pages */}
+        <Route path="/attendance" element={user?.role === 'parent' ? <ParentAttendance /> : <AttendancePage />} />
+        <Route path="/grades" element={user?.role === 'parent' ? <ParentGrades /> : <GradesPage />} />
+        <Route path="/assignments" element={user?.role === 'parent' ? <ParentAssignments /> : <AssignmentsPage />} />
+
+        {/* Parent-specific Pages */}
+        <Route path="/parent/attendance" element={<ParentAttendance />} />
+        <Route path="/parent/grades" element={<ParentGrades />} />
+        <Route path="/parent/assignments" element={<ParentAssignments />} />
+
         <Route path="/behaviour" element={<BehaviourPage />} />
         <Route path="/fees" element={<FeesPage />} />
         <Route path="/risk" element={<RiskAnalysisPage />} />

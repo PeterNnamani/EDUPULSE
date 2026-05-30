@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { getChildrenByParentPhone } from './studentService';
 import { normalizePhone, extractParentPhones } from '@/utils/phoneUtils';
+import { generateStaffId, getNextStaffSequence } from '@/utils/schoolIdUtils';
 
 interface AdminLoginResponse {
     success: boolean;
@@ -295,37 +296,18 @@ export async function createStaff(
     department?: string
 ): Promise<CreateStaffResponse> {
     try {
-        // Generate staff ID prefix based on role
-        const rolePrefix: Record<string, string> = {
-            teacher: 'TCH',
-            principal: 'PRN',
-            counselor: 'CNS',
-            finance: 'FIN',
-            admin: 'ADM',
-            bursar: 'BUR',
-        };
+        // Step 1: Get next sequence number for this role in this school
+        const sequenceNumber = await getNextStaffSequence(schoolId, role);
 
-        const prefix = rolePrefix[role] || 'STF';
+        // Step 2: Generate school-specific staff ID
+        const staffId = await generateStaffId(schoolId, role, sequenceNumber);
 
-        // Get the count of staff with this role to generate unique number
-        const { data: existingStaff, error: countError } = await supabase
-            .from('staff')
-            .select('staff_id')
-            .eq('school_id', schoolId)
-            .ilike('staff_id', `${prefix}%`);
+        console.log(`[CREATE_STAFF] Generated staff ID: ${staffId} (role: ${role}, sequence: ${sequenceNumber})`);
 
-        if (countError) {
-            console.error('Error fetching existing staff:', countError);
-            throw countError;
-        }
-
-        const staffNumber = (existingStaff?.length || 0) + 1;
-        const staffId = `${prefix}${String(staffNumber).padStart(4, '0')}`;
-
-        // Generate temporary PIN (4 digits)
+        // Step 3: Generate temporary PIN (4 digits)
         const temporaryPin = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
 
-        // Create the staff record
+        // Step 4: Create the staff record
         const { data: newStaff, error: createError } = await supabase
             .from('staff')
             .insert([

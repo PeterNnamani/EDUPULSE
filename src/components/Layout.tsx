@@ -63,9 +63,9 @@ const financeNavItems = [
 
 const parentNavItems = [
   { label: 'Dashboard', path: '/parent', icon: LayoutDashboard },
-  { label: 'Attendance', path: '/attendance', icon: CalendarDays },
-  { label: 'Grades', path: '/grades', icon: ClipboardList },
-  { label: 'Assignments', path: '/assignments', icon: BookOpen },
+  { label: 'Attendance', path: '/parent/attendance', icon: CalendarDays },
+  { label: 'Grades', path: '/parent/grades', icon: ClipboardList },
+  { label: 'Assignments', path: '/parent/assignments', icon: BookOpen },
 ];
 
 const roleNavMap = {

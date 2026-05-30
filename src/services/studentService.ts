@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { normalizePhone, comparePhones, extractParentPhones, validatePhone } from '@/utils/phoneUtils';
+import { generateStudentId, getNextStudentSequence } from '@/utils/schoolIdUtils';
 
 interface CreateStudentRequest {
     schoolId: string;
@@ -71,19 +72,11 @@ export async function createStudentWithParent(
     request: CreateStudentRequest
 ): Promise<CreateStudentResponse> {
     try {
-        // Step 1: Generate Student ID
-        const { data: existingStudents, error: countError } = await supabase
-            .from('students')
-            .select('student_id')
-            .eq('school_id', request.schoolId);
+        // Step 1: Generate School-Specific Student ID
+        const studentNumber = await getNextStudentSequence(request.schoolId);
+        const studentId = await generateStudentId(request.schoolId, studentNumber);
 
-        if (countError) {
-            console.error('Error fetching existing students:', countError);
-            throw countError;
-        }
-
-        const studentNumber = (existingStudents?.length || 0) + 1;
-        const studentId = `STU${String(studentNumber).padStart(6, '0')}`;
+        console.log(`[STUDENT_CREATION] Generated student ID: ${studentId} (sequence: ${studentNumber})`);
 
         // Step 2: Create Student Record
         const { data: newStudent, error: studentError } = await supabase
