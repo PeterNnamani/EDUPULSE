@@ -2,8 +2,9 @@ import { motion } from 'framer-motion';
 import { Activity } from 'lucide-react';
 
 export default function SplashScreen() {
+
   return (
-    <div className="min-h-screen bg-white dark:bg-black flex items-center justify-center">
+    <div className="min-h-screen bg-white dark:bg-black flex items-center justify-center cursor-pointer">
       <div className="text-center">
         <motion.div
           initial={{ scale: 0.8, opacity: 0 }}
@@ -77,6 +78,8 @@ export default function SplashScreen() {
             ))}
           </div>
         </motion.div>
+
+
       </div>
     </div>
   );

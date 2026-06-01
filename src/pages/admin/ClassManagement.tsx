@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Users, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Search, Users, Edit2, Trash2, DollarSign } from 'lucide-react';
 import { useAppStore } from '@/store';
+import { supabase } from '@/lib/supabase';
 import { createClass, getClasses, updateClass, deleteClass } from '@/services/classService';
 
 interface ClassForm {
@@ -9,6 +10,7 @@ interface ClassForm {
   gradeLevel: string;
   section: string;
   capacity: string;
+  fee: string;
 }
 
 interface EditingClass {
@@ -17,6 +19,7 @@ interface EditingClass {
   gradeLevel: string;
   section: string;
   capacity: number;
+  fee: number;
 }
 
 export default function ClassManagement() {
@@ -34,6 +37,7 @@ export default function ClassManagement() {
     gradeLevel: '',
     section: '',
     capacity: '40',
+    fee: '0',
   });
 
   const gradeLevels = ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6', 'JSS1', 'JSS2', 'JSS3', 'SS1', 'SS2', 'SS3'];
@@ -52,7 +56,32 @@ export default function ClassManagement() {
     setLoading(true);
     try {
       const classesData = await getClasses(user.schoolId);
-      setClasses(classesData);
+
+      // Fetch fees for each class
+      const classesWithFees = await Promise.all(
+        classesData.map(async (cls: any) => {
+          try {
+            const { data: feeData } = await supabase
+              .from('fees')
+              .select('amount')
+              .eq('class_id', cls.id)
+              .eq('is_active', true)
+              .single();
+
+            return {
+              ...cls,
+              fee: feeData?.amount || 0,
+            };
+          } catch (e) {
+            return {
+              ...cls,
+              fee: 0,
+            };
+          }
+        })
+      );
+
+      setClasses(classesWithFees);
     } catch (error) {
       console.error('Error loading classes:', error);
     } finally {
@@ -66,6 +95,7 @@ export default function ClassManagement() {
       gradeLevel: '',
       section: '',
       capacity: '40',
+      fee: '0',
     });
   };
 
@@ -87,6 +117,25 @@ export default function ClassManagement() {
       });
 
       if (result.success) {
+        // Create fee record for this class
+        if (parseFloat(formData.fee) > 0 && result.classId) {
+          const { error: feeError } = await supabase
+            .from('fees')
+            .insert({
+              school_id: user.schoolId,
+              class_id: result.classId,
+              amount: parseFloat(formData.fee),
+              currency: 'NGN',
+              is_active: true,
+            });
+
+          if (feeError) {
+            console.warn('Warning: Fee created but could not save to database:', feeError);
+          } else {
+            console.log('✓ Fee created for class:', className);
+          }
+        }
+
         setSuccessMessage(`Class ${className} created successfully!`);
         setShowSuccessModal(true);
         setShowAddModal(false);
@@ -117,6 +166,48 @@ export default function ClassManagement() {
       });
 
       if (result.success) {
+        // Update or create fee record for this class
+        if (editingClass.fee > 0) {
+          // Check if fee exists
+          const { data: existingFee } = await supabase
+            .from('fees')
+            .select('id')
+            .eq('class_id', editingClass.id)
+            .eq('is_active', true)
+            .single();
+
+          if (existingFee) {
+            // Update existing fee
+            const { error: feeError } = await supabase
+              .from('fees')
+              .update({ amount: editingClass.fee, updated_at: new Date().toISOString() })
+              .eq('id', existingFee.id);
+
+            if (feeError) {
+              console.warn('Warning: Fee not updated:', feeError);
+            } else {
+              console.log('✓ Fee updated for class');
+            }
+          } else {
+            // Create new fee
+            const { error: feeError } = await supabase
+              .from('fees')
+              .insert({
+                school_id: user?.schoolId,
+                class_id: editingClass.id,
+                amount: editingClass.fee,
+                currency: 'NGN',
+                is_active: true,
+              });
+
+            if (feeError) {
+              console.warn('Warning: Fee could not be saved:', feeError);
+            } else {
+              console.log('✓ Fee created for class');
+            }
+          }
+        }
+
         setSuccessMessage('Class updated successfully!');
         setShowSuccessModal(true);
         setShowEditModal(false);
@@ -157,13 +248,31 @@ export default function ClassManagement() {
     }
   };
 
-  const openEditModal = (cls: any) => {
+  const openEditModal = async (cls: any) => {
+    // Fetch fee for this class
+    let classFee = 0;
+    try {
+      const { data: feeData } = await supabase
+        .from('fees')
+        .select('amount')
+        .eq('class_id', cls.id)
+        .eq('is_active', true)
+        .single();
+
+      if (feeData) {
+        classFee = feeData.amount;
+      }
+    } catch (e) {
+      console.warn('Could not fetch fee for class:', e);
+    }
+
     setEditingClass({
       id: cls.id,
       name: cls.name,
       gradeLevel: cls.grade_level,
       section: cls.section,
       capacity: cls.capacity,
+      fee: classFee,
     });
     setShowEditModal(true);
   };
@@ -232,6 +341,13 @@ export default function ClassManagement() {
                     style={{ width: `${cls.capacity > 0 ? (cls.students / cls.capacity) * 100 : 0}%` }}
                   />
                 </div>
+                {cls.fee > 0 && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-gray-800">
+                    <DollarSign className="w-4 h-4 text-green-600" />
+                    <span className="text-sm text-secondary-text">Fee:</span>
+                    <span className="font-medium text-green-600">NGN {cls.fee.toLocaleString()}</span>
+                  </div>
+                )}
               </div>
             </motion.div>
           ))}
@@ -312,6 +428,22 @@ export default function ClassManagement() {
                 />
               </div>
 
+              <div>
+                <label className="label mb-1.5 block">Class Fee (NGN)</label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-text" />
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={formData.fee}
+                    onChange={(e) => setFormData({ ...formData, fee: e.target.value })}
+                    className="input-field pl-10"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+
               <div className="border-t border-border dark:border-gray-800 pt-6 flex items-center justify-end gap-3">
                 <button type="button" onClick={() => setShowAddModal(false)} className="btn-secondary">
                   Cancel
@@ -384,6 +516,21 @@ export default function ClassManagement() {
                   onChange={(e) => setEditingClass({ ...editingClass, capacity: parseInt(e.target.value) })}
                   className="input-field"
                 />
+              </div>
+
+              <div>
+                <label className="label mb-1.5 block">Class Fee (NGN)</label>
+                <div className="relative">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-text" />
+                  <input
+                    type="number"
+                    min="0"
+                    step="100"
+                    value={editingClass.fee}
+                    onChange={(e) => setEditingClass({ ...editingClass, fee: parseFloat(e.target.value) })}
+                    className="input-field pl-10"
+                  />
+                </div>
               </div>
 
               <div className="border-t border-border dark:border-gray-800 pt-6 flex items-center justify-end gap-3">

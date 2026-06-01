@@ -2,40 +2,206 @@ import { motion } from 'framer-motion';
 import { DollarSign, Users, TrendingUp, AlertTriangle, FileText, CreditCard, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { useAppStore } from '@/store';
+import { supabase } from '@/lib/supabase';
+import { useState, useEffect } from 'react';
 
 export default function FinanceDashboard() {
   const { user } = useAppStore();
+  const schoolId = user?.schoolId;
 
-  const revenueData = [
-    { month: 'Sep', revenue: 1200000, collections: 1100000 },
-    { month: 'Oct', revenue: 1250000, collections: 1180000 },
-    { month: 'Nov', revenue: 1300000, collections: 1250000 },
-    { month: 'Dec', revenue: 1280000, collections: 1200000 },
-    { month: 'Jan', revenue: 1350000, collections: 1300000 },
-    { month: 'Feb', revenue: 1400000, collections: 1350000 },
-  ];
+  const [revenueData, setRevenueData] = useState<any[]>([]);
+  const [outstandingFees, setOutstandingFees] = useState<any[]>([]);
+  const [recentPayments, setRecentPayments] = useState<any[]>([]);
+  const [collectedToday, setCollectedToday] = useState(0);
+  const [keyMetrics, setKeyMetrics] = useState([
+    { label: 'Total Revenue', value: 'NGN 0', change: '+0%', icon: DollarSign, trend: 'up' as const },
+    { label: 'Outstanding Fees', value: 'NGN 0', change: '0 students', icon: AlertTriangle, isAlert: true },
+    { label: 'Collected Today', value: 'NGN 0', change: '+0%', icon: TrendingUp, trend: 'up' as const },
+    { label: 'Collection Rate', value: '0%', change: '+0%', icon: CreditCard, trend: 'up' as const },
+  ]);
 
-  const outstandingFees = [
-    { class: 'SS1A', amount: 245000, students: 12 },
-    { class: 'SS1B', amount: 198000, students: 10 },
-    { class: 'SS2A', amount: 156000, students: 8 },
-    { class: 'SS2B', amount: 178000, students: 9 },
-    { class: 'SS3A', amount: 320000, students: 15 },
-  ];
+  useEffect(() => {
+    if (schoolId) {
+      fetchFinanceData();
+    }
+  }, [schoolId]);
 
-  const recentPayments = [
-    { student: 'John Doe', class: 'SS1A', amount: 45000, method: 'Transfer', time: '10 min ago' },
-    { student: 'Jane Smith', class: 'SS2A', amount: 32000, method: 'Cash', time: '25 min ago' },
-    { student: 'Mike Johnson', class: 'SS3A', amount: 55000, method: 'Card', time: '1 hour ago' },
-    { student: 'Sarah Williams', class: 'SS1B', amount: 28000, method: 'Transfer', time: '2 hours ago' },
-  ];
+  const fetchFinanceData = async () => {
+    if (!schoolId) return;
 
-  const keyMetrics = [
-    { label: 'Total Revenue', value: 'NGN 7.8M', change: '+12%', icon: DollarSign, trend: 'up' },
-    { label: 'Outstanding Fees', value: 'NGN 1.1M', change: '45 students', icon: AlertTriangle, isAlert: true },
-    { label: 'Collected Today', value: 'NGN 160K', change: '+8%', icon: TrendingUp, trend: 'up' },
-    { label: 'Collection Rate', value: '92%', change: '+5%', icon: CreditCard, trend: 'up' },
-  ];
+    try {
+      console.log('🔄 Fetching finance data for schoolId:', schoolId);
+
+      // 1. Fetch all payments
+      let allPayments: any[] = [];
+      try {
+        const { data: payments, error } = await supabase
+          .from('payments')
+          .select('id, student_id, amount, payment_method, status, created_at')
+          .eq('school_id', schoolId)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        allPayments = payments || [];
+        console.log('✓ Payments:', allPayments.length);
+      } catch (e) {
+        console.warn('⚠️ Payments error:', e);
+      }
+
+      // 2. Fetch students with class info for outstanding fees breakdown
+      let students: any[] = [];
+      try {
+        const { data: studentsData, error } = await supabase
+          .from('students')
+          .select('id, first_name, last_name, class_id, student_id')
+          .eq('school_id', schoolId);
+        if (error) throw error;
+        students = studentsData || [];
+        console.log('✓ Students:', students.length);
+      } catch (e) {
+        console.warn('⚠️ Students error:', e);
+      }
+
+      // 3. Fetch classes
+      let classes: any[] = [];
+      try {
+        const { data: classesData, error } = await supabase
+          .from('classes')
+          .select('id, class_name')
+          .eq('school_id', schoolId);
+        if (error) throw error;
+        classes = classesData || [];
+        console.log('✓ Classes:', classes.length);
+      } catch (e) {
+        console.warn('⚠️ Classes error:', e);
+      }
+
+      // Calculate metrics from payments
+      const totalRevenue = allPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const completedPayments = allPayments.filter(p => p.status === 'completed');
+      const collectedAmount = completedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const pendingPayments = allPayments.filter(p => p.status === 'pending');
+      const outstandingAmount = pendingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const collectionRate = totalRevenue > 0 ? ((collectedAmount / totalRevenue) * 100).toFixed(0) : '0';
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const collectedToday = completedPayments
+        .filter(p => new Date(p.created_at) >= todayStart)
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+      // Store for banner display
+      setCollectedToday(collectedToday);
+
+      // Update key metrics
+      setKeyMetrics([
+        {
+          label: 'Total Revenue',
+          value: `NGN ${(totalRevenue / 1000000).toFixed(1)}M`,
+          change: `${allPayments.length} transactions`,
+          icon: DollarSign,
+          trend: 'up' as const
+        },
+        {
+          label: 'Outstanding Fees',
+          value: `NGN ${(outstandingAmount / 1000).toFixed(0)}K`,
+          change: `${pendingPayments.length} students`,
+          icon: AlertTriangle,
+          isAlert: true
+        },
+        {
+          label: 'Collected Today',
+          value: `NGN ${(collectedToday / 1000).toFixed(0)}K`,
+          change: `${completedPayments.filter(p => new Date(p.created_at) >= todayStart).length} payments`,
+          icon: TrendingUp,
+          trend: 'up' as const
+        },
+        {
+          label: 'Collection Rate',
+          value: `${collectionRate}%`,
+          change: totalRevenue > 0 ? '+0%' : 'N/A',
+          icon: CreditCard,
+          trend: 'up' as const
+        },
+      ]);
+
+      // 4. Generate monthly revenue data (last 6 months)
+      const monthlyData: any[] = [];
+      for (let i = 5; i >= 0; i--) {
+        const date = new Date();
+        date.setMonth(date.getMonth() - i);
+        const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+        const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+
+        const monthlyPayments = allPayments.filter(p => {
+          const pDate = new Date(p.created_at);
+          return pDate >= monthStart && pDate <= monthEnd;
+        });
+
+        const monthlyTotal = monthlyPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const monthlyCollected = monthlyPayments
+          .filter(p => p.status === 'completed')
+          .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+        monthlyData.push({
+          month: monthStart.toLocaleString('default', { month: 'short' }),
+          revenue: monthlyTotal,
+          collections: monthlyCollected,
+        });
+      }
+      setRevenueData(monthlyData);
+      console.log('✓ Revenue data:', monthlyData.length, 'months');
+
+      // 5. Calculate outstanding fees by class
+      const outstandingByClass: any[] = [];
+      classes.forEach(cls => {
+        const classStudents = students.filter(s => s.class_id === cls.id);
+        const classUnpaidPayments = pendingPayments.filter(p =>
+          classStudents.some(s => s.id === p.student_id)
+        );
+        const classOutstandingAmount = classUnpaidPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+        if (classOutstandingAmount > 0 || classStudents.length > 0) {
+          outstandingByClass.push({
+            class: cls.class_name || 'Unknown',
+            amount: classOutstandingAmount,
+            students: classUnpaidPayments.length,
+          });
+        }
+      });
+      outstandingByClass.sort((a, b) => b.amount - a.amount).slice(0, 5);
+      setOutstandingFees(outstandingByClass.slice(0, 5));
+      console.log('✓ Outstanding fees by class:', outstandingByClass.length);
+
+      // 6. Get recent payments with student info
+      const recentPaymentsData: any[] = [];
+      for (const payment of allPayments.slice(0, 10)) {
+        const student = students.find(s => s.id === payment.student_id);
+        const studentClass = student ? classes.find(c => c.id === student.class_id) : null;
+        const timeDiff = new Date().getTime() - new Date(payment.created_at).getTime();
+        let timeStr = '';
+        if (timeDiff < 60000) timeStr = 'Just now';
+        else if (timeDiff < 3600000) timeStr = `${Math.floor(timeDiff / 60000)} min ago`;
+        else if (timeDiff < 86400000) timeStr = `${Math.floor(timeDiff / 3600000)} hours ago`;
+        else timeStr = `${Math.floor(timeDiff / 86400000)} days ago`;
+
+        recentPaymentsData.push({
+          student: student ? `${student.first_name} ${student.last_name}` : 'Unknown',
+          class: studentClass?.class_name || 'Unknown',
+          amount: payment.amount,
+          method: payment.payment_method || 'Transfer',
+          time: timeStr,
+          status: payment.status,
+        });
+      }
+      setRecentPayments(recentPaymentsData.slice(0, 4));
+      console.log('✓ Recent payments:', recentPaymentsData.length);
+
+      console.log('========================================');
+      console.log('📊 Finance data loaded successfully');
+      console.log('========================================');
+    } catch (error) {
+      console.error('Fatal error fetching finance data:', error);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -53,7 +219,7 @@ export default function FinanceDashboard() {
           <div className="hidden md:flex items-center gap-6">
             <div className="text-right">
               <p className="text-xs opacity-70">Today's Collections</p>
-              <p className="text-3xl font-bold">NGN 160K</p>
+              <p className="text-3xl font-bold">NGN {(collectedToday / 1000).toFixed(0)}K</p>
             </div>
           </div>
         </div>
@@ -75,9 +241,8 @@ export default function FinanceDashboard() {
                 <div className={`p-2.5 rounded-xl ${metric.isAlert ? 'bg-yellow-100 dark:bg-yellow-900/30' : 'bg-secondary-bg dark:bg-dark-card'}`}>
                   <Icon className={`w-5 h-5 ${metric.isAlert ? 'text-yellow-600 dark:text-yellow-400' : 'text-black dark:text-white'}`} />
                 </div>
-                <span className={`text-xs font-medium ${
-                  metric.trend === 'up' ? 'text-green-600' : 'text-secondary-text'
-                }`}>
+                <span className={`text-xs font-medium ${metric.trend === 'up' ? 'text-green-600' : 'text-secondary-text'
+                  }`}>
                   {metric.change}
                 </span>
               </div>
@@ -106,14 +271,14 @@ export default function FinanceDashboard() {
             <AreaChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
               <XAxis dataKey="month" stroke="#6B7280" fontSize={12} />
-              <YAxis stroke="#6B7280" fontSize={12} tickFormatter={(value) => `${value/1000}K`} />
+              <YAxis stroke="#6B7280" fontSize={12} tickFormatter={(value) => `${value / 1000}K`} />
               <Tooltip
                 contentStyle={{
                   backgroundColor: '#fff',
                   border: '1px solid #E5E7EB',
                   borderRadius: '8px',
                 }}
-                formatter={(value: number) => [`NGN ${(value/1000).toFixed(0)}K`, '']}
+                formatter={(value: number) => [`NGN ${(value / 1000).toFixed(0)}K`, '']}
               />
               <Area type="monotone" dataKey="revenue" stroke="#000" fill="#000" fillOpacity={0.1} />
               <Area type="monotone" dataKey="collections" stroke="#16A34A" fill="#16A34A" fillOpacity={0.1} />
@@ -144,7 +309,7 @@ export default function FinanceDashboard() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={outstandingFees} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
-                <XAxis type="number" stroke="#6B7280" fontSize={12} tickFormatter={(value) => `${value/1000}K`} />
+                <XAxis type="number" stroke="#6B7280" fontSize={12} tickFormatter={(value) => `${value / 1000}K`} />
                 <YAxis dataKey="class" type="category" stroke="#6B7280" fontSize={12} width={40} />
                 <Tooltip
                   contentStyle={{
@@ -152,7 +317,7 @@ export default function FinanceDashboard() {
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
                   }}
-                  formatter={(value: number) => [`NGN ${(value/1000).toFixed(0)}K`, 'Outstanding']}
+                  formatter={(value: number) => [`NGN ${(value / 1000).toFixed(0)}K`, 'Outstanding']}
                 />
                 <Bar dataKey="amount" fill="#EF4444" radius={[0, 4, 4, 0]} />
               </BarChart>
@@ -181,7 +346,7 @@ export default function FinanceDashboard() {
                   <p className="text-xs text-secondary-text">{payment.class} • {payment.method}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-medium text-green-600">+NGN {(payment.amount/1000).toFixed(0)}K</p>
+                  <p className="font-medium text-green-600">+NGN {(payment.amount / 1000).toFixed(0)}K</p>
                   <p className="text-xs text-secondary-text">{payment.time}</p>
                 </div>
               </div>

@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryProvider } from '@/lib/react-query';
 import { useAppStore } from '@/store';
+import { NotificationProvider } from '@/contexts/NotificationContext';
+import ToastContainer from '@/components/ToastContainer';
 import { useEffect, useState } from 'react';
 import SplashScreen from '@/components/SplashScreen';
 import OnboardingFlow from '@/components/OnboardingFlow';
@@ -16,6 +18,7 @@ import ParentDashboard from '@/pages/parent/Dashboard';
 import StudentManagement from '@/pages/admin/StudentManagement';
 import StaffManagement from '@/pages/admin/StaffManagement';
 import ClassManagement from '@/pages/admin/ClassManagement';
+import SubjectsManagement from '@/pages/admin/SubjectsManagement';
 import AttendancePage from '@/pages/attendance/AttendancePage';
 import GradesPage from '@/pages/grades/GradesPage';
 import AssignmentsPage from '@/pages/assignments/AssignmentsPage';
@@ -26,9 +29,12 @@ import InterventionsPage from '@/pages/interventions/InterventionsPage';
 import ReportsPage from '@/pages/reports/ReportsPage';
 import SettingsPage from '@/pages/settings/SettingsPage';
 import SubscriptionsPage from '@/pages/admin/SubscriptionsPage';
+import FeeSettingsPage from '@/pages/admin/FeeSettingsPage';
+import AcademicCalendarSettings from '@/pages/admin/AcademicCalendarSettings';
 import ParentAttendance from '@/pages/parent/ParentAttendance';
 import ParentGrades from '@/pages/parent/ParentGrades';
 import ParentAssignments from '@/pages/parent/ParentAssignments';
+import ParentBehaviour from '@/pages/parent/ParentBehaviour';
 import Layout from '@/components/Layout';
 
 function AppContent() {
@@ -36,7 +42,8 @@ function AppContent() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    const timer = setTimeout(() => setShowSplash(false), 2500);
+    // Give splash screen and intro audio time to play (3 seconds instead of 2.5)
+    const timer = setTimeout(() => setShowSplash(false), 3000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -101,7 +108,10 @@ function AppContent() {
         <Route path="/admin/students" element={<StudentManagement />} />
         <Route path="/admin/staff" element={<StaffManagement />} />
         <Route path="/admin/classes" element={<ClassManagement />} />
+        <Route path="/admin/subjects" element={<SubjectsManagement />} />
         <Route path="/admin/subscriptions" element={<SubscriptionsPage />} />
+        <Route path="/admin/fee-settings" element={<FeeSettingsPage />} />
+        <Route path="/admin/academic-calendar" element={<AcademicCalendarSettings />} />
         <Route path="/teacher" element={<TeacherDashboard />} />
         <Route path="/principal" element={<PrincipalDashboard />} />
         <Route path="/counselor" element={<CounselorDashboard />} />
@@ -112,13 +122,13 @@ function AppContent() {
         <Route path="/attendance" element={user?.role === 'parent' ? <ParentAttendance /> : <AttendancePage />} />
         <Route path="/grades" element={user?.role === 'parent' ? <ParentGrades /> : <GradesPage />} />
         <Route path="/assignments" element={user?.role === 'parent' ? <ParentAssignments /> : <AssignmentsPage />} />
+        <Route path="/behaviour" element={user?.role === 'parent' ? <ParentBehaviour /> : <BehaviourPage />} />
 
         {/* Parent-specific Pages */}
         <Route path="/parent/attendance" element={<ParentAttendance />} />
         <Route path="/parent/grades" element={<ParentGrades />} />
         <Route path="/parent/assignments" element={<ParentAssignments />} />
-
-        <Route path="/behaviour" element={<BehaviourPage />} />
+        <Route path="/parent/behaviour" element={<ParentBehaviour />} />
         <Route path="/fees" element={<FeesPage />} />
         <Route path="/risk" element={<RiskAnalysisPage />} />
         <Route path="/interventions" element={<InterventionsPage />} />
@@ -134,9 +144,12 @@ function AppContent() {
 function App() {
   return (
     <QueryProvider>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
+      <NotificationProvider>
+        <BrowserRouter>
+          <AppContent />
+          <ToastContainer />
+        </BrowserRouter>
+      </NotificationProvider>
     </QueryProvider>
   );
 }

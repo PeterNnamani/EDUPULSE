@@ -1,36 +1,124 @@
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CalendarDays, ClipboardList, Users, AlertTriangle, BookOpen, TrendingUp } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadialBarChart, RadialBar } from 'recharts';
+import { CalendarDays, ClipboardList, Users, AlertTriangle, BookOpen, TrendingUp, Plus, Loader } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAppStore } from '@/store';
+import { getTeacherClasses, getClassStudents } from '@/services/classService';
+import { getTeacherAssignments, getAssignmentStats } from '@/services/assignmentService';
+import { supabase } from '@/lib/supabase';
+
+interface TeacherClass {
+  id: string;
+  name: string;
+  students: number;
+}
+
+interface Assignment {
+  id: string;
+  title: string;
+  class_id: string;
+  due_date: string;
+  status: string;
+}
+
+interface Student {
+  id: string;
+  student_id: string;
+  first_name: string;
+  last_name: string;
+}
 
 export default function TeacherDashboard() {
   const { user } = useAppStore();
+  const [classes, setClasses] = useState<TeacherClass[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [riskStudents, setRiskStudents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [performanceData, setPerformanceData] = useState<any[]>([]);
+  const [totalStudents, setTotalStudents] = useState(0);
+  const [activeAssignments, setActiveAssignments] = useState(0);
 
-  const todayClasses = [
-    { subject: 'Mathematics', class: 'SS1A', time: '08:00 AM', students: 35 },
-    { subject: 'Further Mathematics', class: 'SS2A', time: '10:00 AM', students: 28 },
-    { subject: 'Mathematics', class: 'SS1B', time: '12:00 PM', students: 32 },
-    { subject: 'Further Mathematics', class: 'SS2B', time: '02:00 PM', students: 25 },
-  ];
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      if (!user?.id || !user?.schoolId) {
+        setLoading(false);
+        return;
+      }
 
-  const performanceData = [
-    { subject: 'SS1A', average: 72 },
-    { subject: 'SS1B', average: 68 },
-    { subject: 'SS2A', average: 75 },
-    { subject: 'SS2B', average: 71 },
-  ];
+      try {
+        // Get teacher's classes
+        const teacherClasses = await getTeacherClasses(user.schoolId, user.id);
+        setClasses(teacherClasses);
+        setTotalStudents(teacherClasses.reduce((sum, cls) => sum + cls.students, 0));
 
-  const recentAssignments = [
-    { title: 'Quadratic Equations Quiz', class: 'SS1A', due: 'Tomorrow', submissions: '28/35' },
-    { title: 'Calculus Practice Test', class: 'SS2A', due: 'In 3 days', submissions: '15/28' },
-    { title: 'Algebra Homework', class: 'SS1B', due: 'Completed', submissions: '32/32' },
-  ];
+        // Get teacher's assignments
+        const teacherAssignments = await getTeacherAssignments(user.schoolId, user.id);
+        setAssignments(teacherAssignments);
+        const activeCount = teacherAssignments.filter((a) => a.status === 'active').length;
+        setActiveAssignments(activeCount);
 
-  const riskStudents = [
-    { name: 'John Doe', class: 'SS1A', risk: 'high', reason: 'Low attendance' },
-    { name: 'Jane Smith', class: 'SS2A', risk: 'medium', reason: 'Declining grades' },
-    { name: 'Mike Johnson', class: 'SS1B', risk: 'critical', reason: 'Multiple issues' },
-  ];
+        // Build performance data
+        const perfData = await Promise.all(
+          teacherClasses.map(async (cls) => {
+            // Get average grades for the class
+            const { data: grades, error } = await supabase
+              .from('grades')
+              .select('score')
+              .eq('class_id', cls.id);
+
+            if (error || !grades || grades.length === 0) {
+              return { subject: cls.name, average: 0 };
+            }
+
+            const average = grades.reduce((sum, g) => sum + (g.score || 0), 0) / grades.length;
+            return { subject: cls.name, average: Math.round(average) };
+          })
+        );
+        setPerformanceData(perfData);
+
+        // Get at-risk students
+        const allStudents = await Promise.all(
+          teacherClasses.map((cls) => getClassStudents(cls.id))
+        );
+
+        const riskAssessments: any[] = [];
+        for (const cls of teacherClasses) {
+          const { data: risks, error: riskError } = await supabase
+            .from('risk_assessments')
+            .select('student_id, risk_level, reason')
+            .eq('class_id', cls.id)
+            .gt('risk_score', 50)
+            .limit(3);
+
+          if (!riskError && risks) {
+            for (const risk of risks) {
+              const { data: student } = await supabase
+                .from('students')
+                .select('first_name, last_name')
+                .eq('id', risk.student_id)
+                .single();
+
+              if (student) {
+                riskAssessments.push({
+                  name: `${student.first_name} ${student.last_name}`,
+                  class: cls.name,
+                  risk: risk.risk_level || 'medium',
+                  reason: risk.reason || 'At risk',
+                });
+              }
+            }
+          }
+        }
+        setRiskStudents(riskAssessments.slice(0, 5));
+      } catch (error) {
+        console.error('Error loading dashboard:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, [user?.id, user?.schoolId]);
 
   return (
     <div className="space-y-6">
@@ -43,7 +131,7 @@ export default function TeacherDashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold mb-2">Good Morning, {user?.fullName?.split(' ')[0]}</h1>
-            <p className="text-secondary-text">You have 4 classes scheduled today</p>
+            <p className="text-secondary-text">You have {classes.length} class{classes.length !== 1 ? 'es' : ''} assigned</p>
           </div>
           <div className="hidden md:flex items-center gap-3">
             <div className="text-right">
@@ -57,10 +145,10 @@ export default function TeacherDashboard() {
       {/* Quick Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Classes Today', value: 4, icon: BookOpen },
-          { label: 'Students to Teach', value: 120, icon: Users },
-          { label: 'Pending Assignments', value: 12, icon: ClipboardList },
-          { label: 'Risk Alerts', value: 3, icon: AlertTriangle, isAlert: true },
+          { label: 'Total Classes', value: classes.length, icon: BookOpen },
+          { label: 'Students to Teach', value: totalStudents, icon: Users },
+          { label: 'Active Assignments', value: activeAssignments, icon: ClipboardList },
+          { label: 'At-Risk Students', value: riskStudents.length, icon: AlertTriangle, isAlert: riskStudents.length > 0 },
         ].map((stat, index) => {
           const Icon = stat.icon;
           return (
@@ -78,7 +166,7 @@ export default function TeacherDashboard() {
                 <div>
                   <p className="stat-label text-xs">{stat.label}</p>
                   <p className={`stat-value text-xl ${stat.isAlert ? 'text-yellow-600 dark:text-yellow-400' : ''}`}>
-                    {stat.value}
+                    {loading ? <Loader className="w-5 h-5 animate-spin" /> : stat.value}
                   </p>
                 </div>
               </div>
@@ -87,7 +175,7 @@ export default function TeacherDashboard() {
         })}
       </div>
 
-      {/* Today's Classes */}
+      {/* Classes & Performance */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -96,24 +184,28 @@ export default function TeacherDashboard() {
           className="card"
         >
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">Today's Classes</h3>
-            <button className="text-sm text-black dark:text-white hover:underline">View Schedule</button>
+            <h3 className="font-semibold">Your Classes</h3>
           </div>
           <div className="space-y-3">
-            {todayClasses.map((cls, index) => (
-              <div key={index} className="flex items-center gap-4 p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
-                <div className="w-12 text-center">
-                  <p className="text-xs text-secondary-text">{cls.time}</p>
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium">{cls.subject}</p>
-                  <p className="text-sm text-secondary-text">{cls.class} • {cls.students} students</p>
-                </div>
-                <button className="p-2 rounded-lg bg-black dark:bg-white text-white dark:text-black text-sm font-medium">
-                  Take Attendance
-                </button>
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <Loader className="w-5 h-5 animate-spin" />
               </div>
-            ))}
+            ) : classes.length > 0 ? (
+              classes.map((cls, index) => (
+                <div key={cls.id} className="flex items-center gap-4 p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
+                  <div className="flex-1">
+                    <p className="font-medium">{cls.name}</p>
+                    <p className="text-sm text-secondary-text">{cls.students} students</p>
+                  </div>
+                  <button className="p-2 rounded-lg bg-black dark:bg-white text-white dark:text-black text-sm font-medium hover:opacity-80 transition">
+                    View Class
+                  </button>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-secondary-text py-8">No classes assigned yet</p>
+            )}
           </div>
         </motion.div>
 
@@ -128,23 +220,31 @@ export default function TeacherDashboard() {
             <h3 className="font-semibold">Class Performance</h3>
             <span className="text-sm text-secondary-text">Average scores</span>
           </div>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={performanceData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
-                <XAxis type="number" domain={[0, 100]} stroke="#6B7280" fontSize={12} />
-                <YAxis dataKey="subject" type="category" stroke="#6B7280" fontSize={12} width={40} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #E5E7EB',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Bar dataKey="average" fill="#000" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <Loader className="w-5 h-5 animate-spin" />
+            </div>
+          ) : performanceData.length > 0 ? (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={performanceData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
+                  <XAxis dataKey="subject" stroke="#6B7280" fontSize={12} />
+                  <YAxis type="number" domain={[0, 100]} stroke="#6B7280" fontSize={12} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#fff',
+                      border: '1px solid #E5E7EB',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Bar dataKey="average" fill="#000" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="text-center text-secondary-text py-8">No grade data available</p>
+          )}
         </motion.div>
       </div>
 
@@ -159,24 +259,47 @@ export default function TeacherDashboard() {
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Recent Assignments</h3>
-            <button className="btn-secondary text-sm py-2">Create New</button>
+            <button className="btn-secondary text-sm py-2 flex items-center gap-2">
+              <Plus className="w-4 h-4" />
+              Create New
+            </button>
           </div>
           <div className="space-y-3">
-            {recentAssignments.map((assignment, index) => (
-              <div key={index} className="flex items-center gap-4 p-3 rounded-xl border border-border dark:border-gray-800">
-                <div className="w-10 h-10 rounded-lg bg-secondary-bg dark:bg-dark-card flex items-center justify-center">
-                  <ClipboardList className="w-5 h-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{assignment.title}</p>
-                  <p className="text-xs text-secondary-text">{assignment.class}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium">{assignment.submissions}</p>
-                  <p className="text-xs text-secondary-text">Due {assignment.due}</p>
-                </div>
+            {loading ? (
+              <div className="flex justify-center py-4">
+                <Loader className="w-5 h-5 animate-spin" />
               </div>
-            ))}
+            ) : assignments.length > 0 ? (
+              assignments.slice(0, 5).map((assignment, index) => {
+                const classList = classes.find((c) => c.id === assignment.class_id);
+                const daysUntilDue = assignment.due_date
+                  ? Math.ceil((new Date(assignment.due_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                  : null;
+                return (
+                  <div key={assignment.id} className="flex items-center gap-4 p-3 rounded-xl border border-border dark:border-gray-800">
+                    <div className="w-10 h-10 rounded-lg bg-secondary-bg dark:bg-dark-card flex items-center justify-center">
+                      <ClipboardList className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{assignment.title}</p>
+                      <p className="text-xs text-secondary-text">{classList?.name || 'Unknown Class'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium">{assignment.status}</p>
+                      <p className="text-xs text-secondary-text">
+                        {daysUntilDue !== null ? (
+                          daysUntilDue < 0 ? 'Overdue' : `${daysUntilDue} days`
+                        ) : (
+                          'No due date'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-center text-secondary-text py-4">No assignments yet</p>
+            )}
           </div>
         </motion.div>
 
@@ -195,21 +318,30 @@ export default function TeacherDashboard() {
             <button className="text-sm text-red-600 hover:underline">View All</button>
           </div>
           <div className="space-y-3">
-            {riskStudents.map((student, index) => (
-              <div key={index} className="flex items-center gap-4 p-3 rounded-xl bg-red-50 dark:bg-red-900/10">
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{student.name}</p>
-                  <p className="text-xs text-secondary-text">{student.class} • {student.reason}</p>
-                </div>
-                <div className={`badge ${
-                  student.risk === 'critical' ? 'badge-danger' :
-                  student.risk === 'high' ? 'badge-warning' :
-                  'badge-info'
-                }`}>
-                  {student.risk}
-                </div>
+            {loading ? (
+              <div className="flex justify-center py-4">
+                <Loader className="w-5 h-5 animate-spin" />
               </div>
-            ))}
+            ) : riskStudents.length > 0 ? (
+              riskStudents.map((student, index) => (
+                <div key={index} className="flex items-center gap-4 p-3 rounded-xl bg-red-50 dark:bg-red-900/10">
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{student.name}</p>
+                    <p className="text-xs text-secondary-text">{student.class} • {student.reason}</p>
+                  </div>
+                  <div
+                    className={`badge ${student.risk === 'critical' || student.risk === 'high'
+                        ? 'badge-danger'
+                        : 'badge-warning'
+                      }`}
+                  >
+                    {student.risk}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-secondary-text py-4">No at-risk students currently</p>
+            )}
           </div>
         </motion.div>
       </div>

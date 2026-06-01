@@ -10,6 +10,7 @@ interface AppState {
   school: SchoolState;
   darkMode: boolean;
   sidebarOpen: boolean;
+  selectedParentChildId: string | null;
 
   setUser: (user: User | null) => void;
   setSelectedRole: (role: UserRole | null) => void;
@@ -17,6 +18,7 @@ interface AppState {
   setSchool: (school: SchoolState) => void;
   toggleDarkMode: () => void;
   toggleSidebar: () => void;
+  setSelectedParentChildId: (childId: string | null) => void;
   logout: () => void;
 }
 
@@ -34,6 +36,7 @@ export const useAppStore = create<AppState>()(
       },
       darkMode: false,
       sidebarOpen: true,
+      selectedParentChildId: null,
 
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       setSelectedRole: (selectedRole) => set({ selectedRole }),
@@ -41,6 +44,7 @@ export const useAppStore = create<AppState>()(
       setSchool: (school) => set({ school }),
       toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+      setSelectedParentChildId: (selectedParentChildId) => set({ selectedParentChildId }),
       logout: () => set({
         user: null,
         isAuthenticated: false,
@@ -50,6 +54,7 @@ export const useAppStore = create<AppState>()(
           currentTerm: null,
           currentSession: null,
         },
+        selectedParentChildId: null,
       }),
     }),
     {

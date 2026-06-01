@@ -15,23 +15,24 @@ interface GradeRecord {
 }
 
 export default function ParentGrades() {
-    const { user } = useAppStore();
-    const [selectedChildId, setSelectedChildId] = useState<string>('');
+    const { user, selectedParentChildId, setSelectedParentChildId } = useAppStore();
     const [grades, setGrades] = useState<GradeRecord[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const selectedChildData = user?.children?.find((c: any) => c.id === selectedChildId);
+    const selectedChildData = user?.children?.find((c: any) => c.id === selectedParentChildId);
 
-    // Set default child
+    // Set default child from store or initialize from first child
     useEffect(() => {
-        if (user?.children && user.children.length > 0 && !selectedChildId) {
-            setSelectedChildId(user.children[0].id);
+        if (user?.children && user.children.length > 0) {
+            if (!selectedParentChildId) {
+                setSelectedParentChildId(user.children[0].id);
+            }
         }
-    }, [user?.children, selectedChildId]);
+    }, [user?.children, selectedParentChildId, setSelectedParentChildId]);
 
     // Fetch grades for selected child
     useEffect(() => {
-        if (!selectedChildId || !user?.schoolId) return;
+        if (!selectedParentChildId || !user?.schoolId) return;
 
         const fetchGrades = async () => {
             setLoading(true);
@@ -39,7 +40,7 @@ export default function ParentGrades() {
                 const { data, error } = await supabase
                     .from('grades')
                     .select('*')
-                    .eq('student_id', selectedChildId)
+                    .eq('student_id', selectedParentChildId)
                     .eq('school_id', user.schoolId)
                     .order('date', { ascending: false });
 
@@ -56,7 +57,7 @@ export default function ParentGrades() {
         };
 
         fetchGrades();
-    }, [selectedChildId, user?.schoolId]);
+    }, [selectedParentChildId, user?.schoolId]);
 
     const stats = {
         average: grades.length > 0
@@ -105,8 +106,8 @@ export default function ParentGrades() {
                 >
                     <label className="block text-sm font-semibold mb-3">Select Child</label>
                     <select
-                        value={selectedChildId}
-                        onChange={(e) => setSelectedChildId(e.target.value)}
+                        value={selectedParentChildId || ''}
+                        onChange={(e) => setSelectedParentChildId(e.target.value)}
                         className="w-full px-4 py-2 rounded-lg bg-secondary-bg dark:bg-dark-card border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
                     >
                         {user.children.map((child: any) => (

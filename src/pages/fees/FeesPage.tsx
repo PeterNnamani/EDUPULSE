@@ -1,23 +1,178 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { DollarSign, CreditCard, AlertTriangle, Plus, Search, Download, Users } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { useAppStore } from '@/store';
 
 export default function FeesPage() {
+  const { user } = useAppStore();
+  const schoolId = user?.schoolId;
+
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [feeRecords, setFeeRecords] = useState<any[]>([]);
+  const [filteredRecords, setFilteredRecords] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    totalExpected: 0,
+    totalCollected: 0,
+    totalOutstanding: 0,
+    studentsWithBalance: 0,
+  });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterClass, setFilterClass] = useState('');
+  const [classes, setClasses] = useState<any[]>([]);
 
-  const mockFeeRecords = [
-    { id: '1', student: 'John Doe', class: 'SS1A', feeType: 'Tuition', amount: 45000, paid: 45000, balance: 0, status: 'paid' },
-    { id: '2', student: 'Jane Smith', class: 'SS2A', feeType: 'Tuition', amount: 45000, paid: 30000, balance: 15000, status: 'partial' },
-    { id: '3', student: 'Emeka Brown', class: 'SS1A', feeType: 'Tuition', amount: 45000, paid: 0, balance: 45000, status: 'unpaid' },
-    { id: '4', student: 'Chioma Okonkwo', class: 'SS3A', feeType: 'Tuition', amount: 45000, paid: 45000, balance: 0, status: 'paid' },
-    { id: '5', student: 'Ahmed Muhammad', class: 'SS2B', feeType: 'Tuition', amount: 45000, paid: 20000, balance: 25000, status: 'partial' },
-  ];
+  useEffect(() => {
+    if (schoolId) {
+      fetchFeeData();
+    }
+  }, [schoolId]);
 
-  const stats = {
-    totalExpected: 1575000,
-    totalCollected: 1125000,
-    totalOutstanding: 450000,
-    studentsWithBalance: 45,
+  useEffect(() => {
+    filterRecords();
+  }, [feeRecords, searchTerm, filterStatus, filterClass]);
+
+  const fetchFeeData = async () => {
+    if (!schoolId) return;
+
+    try {
+      console.log('🔄 Fetching fee data for schoolId:', schoolId);
+
+      // 1. Fetch all students
+      let students: any[] = [];
+      try {
+        const { data: studentsData, error } = await supabase
+          .from('students')
+          .select('id, first_name, last_name, student_id, class_id, status')
+          .eq('school_id', schoolId)
+          .eq('status', 'active');
+        if (error) throw error;
+        students = studentsData || [];
+        console.log('✓ Students:', students.length);
+      } catch (e) {
+        console.warn('⚠️ Students error:', e);
+      }
+
+      // 2. Fetch all classes
+      let classesData: any[] = [];
+      try {
+        const { data: cls, error } = await supabase
+          .from('classes')
+          .select('id, class_name')
+          .eq('school_id', schoolId);
+        if (error) throw error;
+        classesData = cls || [];
+        setClasses(classesData);
+        console.log('✓ Classes:', classesData.length);
+      } catch (e) {
+        console.warn('⚠️ Classes error:', e);
+      }
+
+      // 3. Fetch all payments
+      let payments: any[] = [];
+      try {
+        const { data: paymentData, error } = await supabase
+          .from('payments')
+          .select('id, student_id, amount, status, created_at, payment_method')
+          .eq('school_id', schoolId)
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        payments = paymentData || [];
+        console.log('✓ Payments:', payments.length);
+      } catch (e) {
+        console.warn('⚠️ Payments error:', e);
+      }
+
+      // 4. Fetch fees by class
+      let feesData: any[] = [];
+      try {
+        const { data: feesByClass, error } = await supabase
+          .from('fees')
+          .select('id, class_id, amount, due_date, late_fee, description')
+          .eq('school_id', schoolId)
+          .eq('is_active', true);
+        if (error) throw error;
+        feesData = feesByClass || [];
+        console.log('✓ Fees configured:', feesData.length);
+      } catch (e) {
+        console.warn('⚠️ Fees error:', e);
+      }
+
+      // 5. Create fee records by student
+      const records: any[] = [];
+
+      students.forEach(student => {
+        const studentPayments = payments.filter(p => p.student_id === student.id);
+        const totalPaid = studentPayments
+          .filter(p => p.status === 'completed')
+          .reduce((sum, p) => sum + (p.amount || 0), 0);
+
+        const studentClass = classesData.find(c => c.id === student.class_id);
+        const classFee = feesData.find(f => f.class_id === student.class_id);
+        const feeAmount = classFee?.amount || 0; // Use configured fee or 0 if none
+
+        const balance = feeAmount - totalPaid;
+        const status = balance === 0 ? 'paid' : balance < feeAmount && balance > 0 ? 'partial' : 'unpaid';
+
+        records.push({
+          id: student.id,
+          student: `${student.first_name} ${student.last_name}`,
+          studentId: student.student_id,
+          class: studentClass?.class_name || 'Unknown',
+          feeType: 'Tuition',
+          amount: feeAmount,
+          paid: totalPaid,
+          balance: Math.max(0, balance),
+          status: status,
+        });
+      });
+
+      setFeeRecords(records);
+
+      // 6. Calculate stats
+      const totalExpected = records.reduce((sum, r) => sum + r.amount, 0);
+      const totalCollected = records.reduce((sum, r) => sum + r.paid, 0);
+      const totalOutstanding = records.reduce((sum, r) => sum + r.balance, 0);
+      const studentsWithBalance = records.filter(r => r.balance > 0).length;
+
+      setStats({
+        totalExpected,
+        totalCollected,
+        totalOutstanding,
+        studentsWithBalance,
+      });
+
+      console.log('✓ Fee records created:', records.length);
+      console.log('========================================');
+      console.log('📊 Total Expected:', totalExpected);
+      console.log('📊 Total Collected:', totalCollected);
+      console.log('📊 Outstanding:', totalOutstanding);
+      console.log('📊 Students with balance:', studentsWithBalance);
+      console.log('========================================');
+    } catch (error) {
+      console.error('Fatal error fetching fee data:', error);
+    }
+  };
+
+  const filterRecords = () => {
+    let filtered = [...feeRecords];
+
+    if (searchTerm) {
+      filtered = filtered.filter(r =>
+        r.student.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        r.studentId.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (filterStatus) {
+      filtered = filtered.filter(r => r.status === filterStatus);
+    }
+
+    if (filterClass) {
+      filtered = filtered.filter(r => r.class === filterClass);
+    }
+
+    setFilteredRecords(filtered);
   };
 
   return (
@@ -92,19 +247,32 @@ export default function FeesPage() {
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-secondary-text" />
-            <input className="input-field pl-10" placeholder="Search students..." />
+            <input
+              className="input-field pl-10"
+              placeholder="Search students..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
-          <select className="input-field w-full md:w-40">
+          <select
+            className="input-field w-full md:w-40"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
             <option value="">All Status</option>
             <option value="paid">Paid</option>
             <option value="partial">Partial</option>
             <option value="unpaid">Unpaid</option>
           </select>
-          <select className="input-field w-full md:w-40">
+          <select
+            className="input-field w-full md:w-40"
+            value={filterClass}
+            onChange={(e) => setFilterClass(e.target.value)}
+          >
             <option value="">All Classes</option>
-            <option value="SS1A">SS1A</option>
-            <option value="SS1B">SS1B</option>
-            <option value="SS2A">SS2A</option>
+            {classes.map(cls => (
+              <option key={cls.id} value={cls.class_name}>{cls.class_name}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -129,7 +297,7 @@ export default function FeesPage() {
               </tr>
             </thead>
             <tbody>
-              {mockFeeRecords.map((record) => (
+              {filteredRecords.map((record) => (
                 <tr key={record.id} className="table-row">
                   <td className="px-4 py-3">
                     <span className="font-medium">{record.student}</span>
@@ -140,11 +308,10 @@ export default function FeesPage() {
                   <td className="px-4 py-3 text-right text-green-600">NGN {record.paid.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right text-red-600 font-medium">NGN {record.balance.toLocaleString()}</td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`badge ${
-                      record.status === 'paid' ? 'badge-success' :
+                    <span className={`badge ${record.status === 'paid' ? 'badge-success' :
                       record.status === 'partial' ? 'badge-warning' :
-                      'badge-danger'
-                    }`}>
+                        'badge-danger'
+                      }`}>
                       {record.status}
                     </span>
                   </td>

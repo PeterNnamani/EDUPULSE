@@ -249,3 +249,86 @@ export async function deleteClass(classId: string): Promise<{ success: boolean; 
         };
     }
 }
+
+/**
+ * Get classes assigned to a teacher
+ */
+export async function getTeacherClasses(
+    schoolId: string,
+    teacherId: string
+): Promise<(ClassData & { students: number })[]> {
+    try {
+        const { data: classesData, error: classError } = await supabase
+            .from('classes')
+            .select('id, school_id, name, grade_level, section, capacity, class_teacher_id, is_active, created_at, updated_at')
+            .eq('school_id', schoolId)
+            .eq('class_teacher_id', teacherId)
+            .eq('is_active', true)
+            .order('name', { ascending: true });
+
+        if (classError) {
+            console.error('Error fetching teacher classes:', classError);
+            return [];
+        }
+
+        if (!classesData || classesData.length === 0) {
+            return [];
+        }
+
+        // Get student counts for each class
+        const classesWithCounts = await Promise.all(
+            classesData.map(async (cls: any) => {
+                const { count, error: countError } = await supabase
+                    .from('students')
+                    .select('id', { count: 'exact' })
+                    .eq('school_id', schoolId)
+                    .eq('class_id', cls.id);
+
+                const studentCount = !countError && count ? count : 0;
+
+                return {
+                    id: cls.id,
+                    school_id: cls.school_id,
+                    name: cls.name,
+                    grade_level: cls.grade_level,
+                    section: cls.section,
+                    capacity: cls.capacity,
+                    class_teacher_id: cls.class_teacher_id,
+                    students: studentCount,
+                    is_active: cls.is_active,
+                    created_at: cls.created_at,
+                    updated_at: cls.updated_at,
+                };
+            })
+        );
+
+        return classesWithCounts;
+    } catch (error) {
+        console.error('Get teacher classes error:', error);
+        return [];
+    }
+}
+
+/**
+ * Get students in a class
+ */
+export async function getClassStudents(classId: string): Promise<Array<any>> {
+    try {
+        const { data, error } = await supabase
+            .from('students')
+            .select('id, student_id, first_name, last_name, middle_name, gender, class_id, status')
+            .eq('class_id', classId)
+            .eq('status', 'active')
+            .order('last_name, first_name', { ascending: true });
+
+        if (error) {
+            console.error('Error fetching class students:', error);
+            return [];
+        }
+
+        return data || [];
+    } catch (error) {
+        console.error('Get class students error:', error);
+        return [];
+    }
+}

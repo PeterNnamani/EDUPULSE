@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { CalendarDays, ClipboardList, AlertTriangle, BookOpen, TrendingUp, ArrowRight, User, ChevronDown, Loader } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
+import { getStudentAssignments } from '@/services/assignmentService';
 
 interface ChildStats {
   [key: string]: {
@@ -25,11 +26,19 @@ interface Child {
   classId?: string;
 }
 
+interface Assignment {
+  id: string;
+  title: string;
+  due_date: string;
+  status: string;
+  submissions?: Array<{ status: string }>;
+}
+
 export default function ParentDashboard() {
-  const { user } = useAppStore();
+  const { user, selectedParentChildId, setSelectedParentChildId } = useAppStore();
   const navigate = useNavigate();
-  const [selectedChildId, setSelectedChildId] = useState<string>('');
   const [childStats, setChildStats] = useState<ChildStats>({});
+  const [recentAssignments, setRecentAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [openChildSelector, setOpenChildSelector] = useState(false);
 
@@ -38,16 +47,19 @@ export default function ParentDashboard() {
   const isMountedRef = useRef(true);
   const fetchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Set default selected child - only runs once when children load
+  // Set default selected child from store or initialize from first child
   useEffect(() => {
-    if (user?.children && user.children.length > 0 && !selectedChildId) {
+    if (user?.children && user.children.length > 0 && !selectedParentChildId) {
       console.log('[PARENT_DASHBOARD] Setting default child:', user.children[0].id);
-      setSelectedChildId(user.children[0].id);
+      setSelectedParentChildId(user.children[0].id);
     }
-  }, []);
+  }, [user?.children?.length, setSelectedParentChildId, selectedParentChildId]);
 
-  // Fetch child stats - only when selectedChildId changes
+  // Fetch child stats - only when selectedParentChildId changes
   useEffect(() => {
+    // Reset mounted ref when effect runs (component came back into view)
+    isMountedRef.current = true;
+
     // Cleanup timer on effect restart
     if (fetchTimerRef.current) {
       clearTimeout(fetchTimerRef.current);
@@ -56,34 +68,56 @@ export default function ParentDashboard() {
 
     const fetchChildStats = async () => {
       // Early return if conditions not met
-      if (!selectedChildId || !user?.schoolId) {
+      if (!selectedParentChildId || !user?.schoolId) {
         if (isMountedRef.current) {
           setLoading(false);
         }
         return;
       }
 
+      // Check if we already have cached data for this child
+      const hasCachedData = childStats[selectedParentChildId];
+
+      // If we have cached data, don't show loader
+      if (hasCachedData) {
+        console.log(`[PARENT_DASHBOARD] Using cached data for child: ${selectedParentChildId}`);
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+      } else {
+        // Only show loader if no cached data
+        if (isMountedRef.current) {
+          setLoading(true);
+        }
+      }
+
       // Request deduplication: skip if same request already pending
-      if (pendingRequestRef.current === selectedChildId) {
-        console.log(`[PARENT_DASHBOARD] Request already pending for child: ${selectedChildId}`);
+      if (pendingRequestRef.current === selectedParentChildId) {
+        console.log(`[PARENT_DASHBOARD] Request already pending for child: ${selectedParentChildId}`);
         return;
       }
 
       // Mark request as pending
-      pendingRequestRef.current = selectedChildId;
+      pendingRequestRef.current = selectedParentChildId;
 
-      if (isMountedRef.current) {
-        setLoading(true);
-      }
+      // Add timeout to prevent loader from showing forever (max 10 seconds)
+      const timeoutId = setTimeout(() => {
+        if (isMountedRef.current && pendingRequestRef.current === selectedParentChildId) {
+          console.warn(`[PARENT_DASHBOARD] Fetch timeout for child: ${selectedParentChildId}`);
+          setLoading(false);
+          pendingRequestRef.current = null;
+        }
+      }, 10000);
+      fetchTimerRef.current = timeoutId;
 
       try {
-        console.log(`[PARENT_DASHBOARD] Fetching stats for child: ${selectedChildId}`);
+        console.log(`[PARENT_DASHBOARD] Fetching stats for child: ${selectedParentChildId}`);
 
         // Fetch attendance data
         const { data: attendanceData, error: attendanceError } = await supabase
           .from('attendance')
           .select('status')
-          .eq('student_id', selectedChildId)
+          .eq('student_id', selectedParentChildId)
           .eq('school_id', user.schoolId);
 
         if (attendanceError) {
@@ -102,7 +136,7 @@ export default function ParentDashboard() {
         const { data: gradesData, error: gradesError } = await supabase
           .from('grades')
           .select('score')
-          .eq('student_id', selectedChildId)
+          .eq('student_id', selectedParentChildId)
           .eq('school_id', user.schoolId);
 
         if (gradesError) {
@@ -117,7 +151,7 @@ export default function ParentDashboard() {
         const { data: assignmentData, error: assignmentError } = await supabase
           .from('assignment_submissions')
           .select('status')
-          .eq('student_id', selectedChildId)
+          .eq('student_id', selectedParentChildId)
           .eq('school_id', user.schoolId);
 
         if (assignmentError) {
@@ -134,7 +168,7 @@ export default function ParentDashboard() {
         const { data: behaviourData, error: behaviourError } = await supabase
           .from('behaviour_records')
           .select('behaviour_type')
-          .eq('student_id', selectedChildId)
+          .eq('student_id', selectedParentChildId)
           .eq('school_id', user.schoolId);
 
         if (behaviourError) {
@@ -150,7 +184,7 @@ export default function ParentDashboard() {
         const { data: riskData, error: riskError } = await supabase
           .from('risk_assessments')
           .select('risk_level')
-          .eq('student_id', selectedChildId)
+          .eq('student_id', selectedParentChildId)
           .eq('school_id', user.schoolId)
           .order('assessed_at', { ascending: false })
           .limit(1);
@@ -161,11 +195,20 @@ export default function ParentDashboard() {
 
         const riskLevel = riskData && riskData.length > 0 ? riskData[0].risk_level : 'low';
 
+        // Fetch recent assignments for the dashboard preview
+        try {
+          const assignments = await getStudentAssignments(user.schoolId, selectedParentChildId);
+          const recent = assignments.slice(0, 3);
+          setRecentAssignments(recent);
+        } catch (error) {
+          console.error('[PARENT_DASHBOARD] Error fetching recent assignments:', error);
+        }
+
         // Only update state if component is still mounted and this is still the pending request
-        if (isMountedRef.current && pendingRequestRef.current === selectedChildId) {
+        if (isMountedRef.current && pendingRequestRef.current === selectedParentChildId) {
           setChildStats((prevStats) => ({
             ...prevStats,
-            [selectedChildId]: {
+            [selectedParentChildId]: {
               attendance: { ...attendanceStats, percentage: attendancePercentage },
               averageGrade: averageGrade,
               assignments: assignmentStats,
@@ -176,8 +219,12 @@ export default function ParentDashboard() {
           }));
           setLoading(false);
 
-          // Clear pending request
+          // Clear pending request and timeout
           pendingRequestRef.current = null;
+          if (fetchTimerRef.current) {
+            clearTimeout(fetchTimerRef.current);
+            fetchTimerRef.current = null;
+          }
         }
       } catch (error) {
         console.error('[PARENT_DASHBOARD] Error fetching child stats:', error);
@@ -185,6 +232,10 @@ export default function ParentDashboard() {
           setLoading(false);
         }
         pendingRequestRef.current = null;
+        if (fetchTimerRef.current) {
+          clearTimeout(fetchTimerRef.current);
+          fetchTimerRef.current = null;
+        }
       }
     };
 
@@ -197,7 +248,7 @@ export default function ParentDashboard() {
         clearTimeout(fetchTimerRef.current);
       }
     };
-  }, [selectedChildId]);
+  }, [selectedParentChildId]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -211,8 +262,8 @@ export default function ParentDashboard() {
     };
   }, []);
 
-  const selectedChild = user?.children?.find((c: Child) => c.id === selectedChildId);
-  const stats = childStats[selectedChildId] || {
+  const selectedChild = user?.children?.find((c: Child) => c.id === selectedParentChildId);
+  const stats = childStats[selectedParentChildId || ''] || {
     attendance: { present: 0, absent: 0, late: 0, percentage: 0 },
     averageGrade: 0,
     assignments: { completed: 0, pending: 0, total: 0 },
@@ -297,10 +348,10 @@ export default function ParentDashboard() {
                     <button
                       key={child.id}
                       onClick={() => {
-                        setSelectedChildId(child.id);
+                        setSelectedParentChildId(child.id);
                         setOpenChildSelector(false);
                       }}
-                      className={`w-full text-left px-4 py-2 hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors first:rounded-t-lg last:rounded-b-lg ${selectedChildId === child.id
+                      className={`w-full text-left px-4 py-2 hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors first:rounded-t-lg last:rounded-b-lg ${selectedParentChildId === child.id
                         ? 'bg-gray-800 dark:bg-gray-100 font-semibold'
                         : ''
                         }`}
@@ -316,7 +367,7 @@ export default function ParentDashboard() {
         </div>
       </motion.div>
 
-      {loading && selectedChildId ? (
+      {loading && selectedParentChildId ? (
         <div className="card flex items-center justify-center py-12">
           <Loader className="w-8 h-8 animate-spin text-secondary-text" />
         </div>
@@ -426,8 +477,66 @@ export default function ParentDashboard() {
             </div>
           </motion.div>
 
+          {/* Recent Assignments Preview */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="card"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg">Recent Assignments</h3>
+              <button
+                onClick={() => navigate('/parent/assignments')}
+                className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+              >
+                View All →
+              </button>
+            </div>
+            {recentAssignments.length > 0 ? (
+              <div className="space-y-3">
+                {recentAssignments.slice(0, 3).map((assignment) => {
+                  const submission = assignment.submissions?.[0];
+                  const submissionStatus = submission?.status || 'pending';
+                  const isOverdue =
+                    submissionStatus === 'pending' && new Date(assignment.due_date) < new Date();
+
+                  return (
+                    <div
+                      key={assignment.id}
+                      className={`p-3 rounded-lg border ${isOverdue
+                        ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10'
+                        : 'border-gray-200 dark:border-gray-700'
+                        }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">{assignment.title}</p>
+                          <p className="text-xs text-secondary-text mt-1">
+                            Due: {new Date(assignment.due_date).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <span
+                          className={`text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap ${submissionStatus === 'graded'
+                            ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100'
+                            : submissionStatus === 'submitted'
+                              ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-100'
+                              : 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-100'
+                            }`}
+                        >
+                          {isOverdue ? 'Overdue' : submissionStatus}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-center text-secondary-text py-4">No assignments yet</p>
+            )}
+          </motion.div>
+
           {/* Quick Action Links */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <motion.button
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -478,6 +587,25 @@ export default function ParentDashboard() {
                   <div className="text-left">
                     <p className="font-semibold">View Assignments</p>
                     <p className="text-sm text-secondary-text">See all assignments</p>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-secondary-text group-hover:translate-x-1 transition-transform" />
+              </div>
+            </motion.button>
+
+            <motion.button
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+              onClick={() => navigate('/parent/behaviour')}
+              className="card hover:shadow-lg transition-all group cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="w-6 h-6 text-orange-500 group-hover:scale-110 transition-transform" />
+                  <div className="text-left">
+                    <p className="font-semibold">View Behaviour</p>
+                    <p className="text-sm text-secondary-text">See behaviour records</p>
                   </div>
                 </div>
                 <ArrowRight className="w-5 h-5 text-secondary-text group-hover:translate-x-1 transition-transform" />

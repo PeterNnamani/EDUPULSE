@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Filter, Edit2, Trash2, UserPlus, Copy, Check, Eye, EyeOff } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, UserPlus, Copy, Check, Eye, EyeOff, BookOpen, X, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { createStaff, updateStaff } from '@/services/authService';
 import { supabase } from '@/lib/supabase';
@@ -14,6 +14,20 @@ interface Staff {
   role: string;
   department: string | null;
   is_active: boolean;
+  pin?: string;
+}
+
+interface Class {
+  id: string;
+  name: string;
+  grade_level: string;
+  class_teacher_id: string | null;
+  class_teacher_name?: string;
+}
+
+interface Subject {
+  id: string;
+  name: string;
 }
 
 export default function StaffManagement() {
@@ -22,12 +36,24 @@ export default function StaffManagement() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showAssignClassModal, setShowAssignClassModal] = useState(false);
+  const [showAssignSubjectModal, setShowAssignSubjectModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [staffList, setStaffList] = useState<Staff[]>([]);
+  const [classList, setClassList] = useState<Class[]>([]);
+  const [subjectList, setSubjectList] = useState<Subject[]>([]);
+  const [staffSubjects, setStaffSubjects] = useState<Record<string, string[]>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedPin, setCopiedPin] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  const [visiblePins, setVisiblePins] = useState<Set<string>>(new Set());
+  const [copiedPins, setCopiedPins] = useState<Set<string>>(new Set());
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
+  const [assigningStaff, setAssigningStaff] = useState<Staff | null>(null);
+  const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set());
+  const [selectedSubjects, setSelectedSubjects] = useState<Set<string>>(new Set());
+  const [assignError, setAssignError] = useState<string>('');
+  const [assignSuccess, setAssignSuccess] = useState<string>('');
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -53,10 +79,12 @@ export default function StaffManagement() {
     role: string;
   } | null>(null);
 
-  // Fetch staff list
+  // Fetch staff list and subjects
   useEffect(() => {
     if (user?.schoolId) {
       fetchStaff();
+      fetchSubjects();
+      fetchStaffSubjects();
     }
   }, [user?.schoolId]);
 
@@ -74,6 +102,82 @@ export default function StaffManagement() {
       setStaffList(data || []);
     } catch (error) {
       console.error('Error fetching staff:', error);
+    }
+  };
+
+  const fetchClasses = async () => {
+    if (!user?.schoolId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('classes')
+        .select(`
+          id,
+          name,
+          grade_level,
+          class_teacher_id,
+          staff!class_teacher_id(full_name)
+        `)
+        .eq('school_id', user.schoolId)
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+
+      const formattedClasses = (data || []).map((cls: any) => ({
+        id: cls.id,
+        name: cls.name,
+        grade_level: cls.grade_level,
+        class_teacher_id: cls.class_teacher_id,
+        class_teacher_name: cls.staff?.full_name,
+      }));
+
+      setClassList(formattedClasses);
+    } catch (error) {
+      console.error('Error fetching classes:', error);
+    }
+  };
+
+  const fetchSubjects = async () => {
+    if (!user?.schoolId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('subjects')
+        .select('id, name')
+        .eq('school_id', user.schoolId)
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setSubjectList(data || []);
+    } catch (error) {
+      console.error('Error fetching subjects:', error);
+    }
+  };
+
+  const fetchStaffSubjects = async () => {
+    if (!user?.schoolId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('staff_subjects')
+        .select('staff_id, subject_id')
+        .eq('school_id', user.schoolId);
+
+      if (error) throw error;
+
+      const mapping: Record<string, string[]> = {};
+      (data || []).forEach((record: any) => {
+        if (!mapping[record.staff_id]) {
+          mapping[record.staff_id] = [];
+        }
+        mapping[record.staff_id].push(record.subject_id);
+      });
+
+      setStaffSubjects(mapping);
+    } catch (error) {
+      console.error('Error fetching staff subjects:', error);
     }
   };
 
@@ -120,6 +224,11 @@ export default function StaffManagement() {
   };
 
   const handleEditClick = (staff: Staff) => {
+    // Admins can only edit themselves, they should use Settings for their own profile
+    if (user?.role === 'admin' && user?.id !== staff.id) {
+      alert('As admin, you can only edit your own profile through Settings.');
+      return;
+    }
     setEditingStaff(staff);
     setEditFormData({
       fullName: staff.full_name,
@@ -174,7 +283,134 @@ export default function StaffManagement() {
     }
   };
 
+  const handleAssignClassClick = async (staff: Staff) => {
+    setAssigningStaff(staff);
+    setSelectedClasses(new Set());
+    setAssignError('');
+    setAssignSuccess('');
+    await fetchClasses();
+    setShowAssignClassModal(true);
+  };
+
+  const handleAssignSubjectClick = async (staff: Staff) => {
+    setAssigningStaff(staff);
+    setSelectedSubjects(new Set(staffSubjects[staff.id] || []));
+    setAssignError('');
+    setAssignSuccess('');
+    await fetchSubjects();
+    setShowAssignSubjectModal(true);
+  };
+
+  const handleAssignClasses = async () => {
+    if (!assigningStaff || !user?.schoolId) return;
+
+    if (selectedClasses.size === 0) {
+      setAssignError('Please select at least one class');
+      return;
+    }
+
+    setLoading(true);
+    setAssignError('');
+
+    try {
+      // First, unassign any other staff from the selected classes
+      await supabase
+        .from('classes')
+        .update({ class_teacher_id: null })
+        .eq('school_id', user.schoolId)
+        .in('id', Array.from(selectedClasses));
+
+      // Then assign the selected classes to this staff
+      await supabase
+        .from('classes')
+        .update({ class_teacher_id: assigningStaff.id })
+        .in('id', Array.from(selectedClasses));
+
+      setAssignSuccess(`Successfully assigned ${selectedClasses.size} class(es) to ${assigningStaff.full_name}`);
+
+      setTimeout(() => {
+        setShowAssignClassModal(false);
+        setAssigningStaff(null);
+        setSelectedClasses(new Set());
+        fetchStaff();
+        fetchClasses();
+      }, 1500);
+    } catch (error) {
+      console.error('Error assigning classes:', error);
+      setAssignError('Failed to assign classes');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleClassSelection = (classId: string) => {
+    const newSet = new Set(selectedClasses);
+    if (newSet.has(classId)) {
+      newSet.delete(classId);
+    } else {
+      newSet.add(classId);
+    }
+    setSelectedClasses(newSet);
+  };
+
+  const toggleSubjectSelection = (subjectId: string) => {
+    const newSet = new Set(selectedSubjects);
+    if (newSet.has(subjectId)) {
+      newSet.delete(subjectId);
+    } else {
+      newSet.add(subjectId);
+    }
+    setSelectedSubjects(newSet);
+  };
+
+  const handleAssignSubjects = async () => {
+    if (!assigningStaff || !user?.schoolId) return;
+
+    setLoading(true);
+    setAssignError('');
+
+    try {
+      // Delete all existing subject assignments for this staff
+      const { error: deleteError } = await supabase
+        .from('staff_subjects')
+        .delete()
+        .eq('staff_id', assigningStaff.id);
+
+      if (deleteError) throw deleteError;
+
+      // Add new subject assignments
+      if (selectedSubjects.size > 0) {
+        const assignments = Array.from(selectedSubjects).map((subjectId) => ({
+          school_id: user.schoolId,
+          staff_id: assigningStaff.id,
+          subject_id: subjectId,
+        }));
+
+        const { error } = await supabase
+          .from('staff_subjects')
+          .insert(assignments);
+
+        if (error) throw error;
+      }
+
+      setAssignSuccess(`Successfully assigned ${selectedSubjects.size} subject(s) to ${assigningStaff.full_name}`);
+
+      setTimeout(() => {
+        setShowAssignSubjectModal(false);
+        setAssigningStaff(null);
+        setSelectedSubjects(new Set());
+        fetchStaffSubjects();
+      }, 1500);
+    } catch (error: any) {
+      console.error('Error assigning subjects:', error);
+      setAssignError(error?.message || 'Failed to assign subjects. Ensure the staff_subjects table exists in Supabase.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredStaff = staffList.filter((staff) =>
+    staff.role !== 'admin' && // Hide admins from list
     `${staff.full_name} ${staff.staff_id} ${staff.email || ''}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -198,6 +434,39 @@ export default function StaffManagement() {
       setCopiedPin(true);
       setTimeout(() => setCopiedPin(false), 2000);
     }
+  };
+
+  const togglePinVisibility = (staffId: string) => {
+    const newSet = new Set(visiblePins);
+    if (newSet.has(staffId)) {
+      newSet.delete(staffId);
+    } else {
+      newSet.add(staffId);
+    }
+    setVisiblePins(newSet);
+  };
+
+  const copyStaffPin = (staffId: string, pin: string) => {
+    navigator.clipboard.writeText(pin);
+    const newSet = new Set(copiedPins);
+    newSet.add(staffId);
+    setCopiedPins(newSet);
+    setTimeout(() => {
+      setCopiedPins(prev => {
+        const updated = new Set(prev);
+        updated.delete(staffId);
+        return updated;
+      });
+    }, 2000);
+  };
+
+  const getStaffAssignedClasses = (staffId: string) => {
+    return classList.filter(c => c.class_teacher_id === staffId);
+  };
+
+  const getStaffAssignedSubjects = (staffId: string) => {
+    const subjectIds = staffSubjects[staffId] || [];
+    return subjectList.filter(s => subjectIds.includes(s.id));
   };
 
   return (
@@ -240,37 +509,118 @@ export default function StaffManagement() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredStaff.map((staff, index) => (
-              <motion.div
-                key={staff.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="card-hover"
-              >
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-bold text-lg">
-                    {staff.full_name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold">{staff.full_name}</h3>
-                      <span className={`badge ${getRoleBadge(staff.role)}`}>{staff.role}</span>
+            {filteredStaff.map((staff, index) => {
+              const assignedClasses = getStaffAssignedClasses(staff.id);
+              return (
+                <motion.div
+                  key={staff.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="card-hover"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-bold text-lg">
+                      {staff.full_name.split(' ').map(n => n[0]).join('').slice(0, 2)}
                     </div>
-                    <p className="text-xs text-secondary-text font-mono mt-1">{staff.staff_id}</p>
-                    {staff.department && <p className="text-sm text-secondary-text mt-1">{staff.department}</p>}
-                    <div className="flex items-center gap-2 mt-3">
-                      <button
-                        onClick={() => handleEditClick(staff)}
-                        className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold">{staff.full_name}</h3>
+                        <span className={`badge ${getRoleBadge(staff.role)}`}>{staff.role}</span>
+                      </div>
+                      <p className="text-xs text-secondary-text font-mono mt-1">{staff.staff_id}</p>
+                      {staff.department && <p className="text-sm text-secondary-text mt-1">{staff.department}</p>}
+
+                      {staff.pin && (
+                        <div className="mt-1 p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex-1 bg-white dark:bg-black/30 rounded px-1.5 py-0.5 font-mono font-bold text-xs tracking-wider">
+                              {visiblePins.has(staff.id) ? staff.pin : '••••••'}
+                            </div>
+                            <button
+                              onClick={() => togglePinVisibility(staff.id)}
+                              className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded transition-colors"
+                              title={visiblePins.has(staff.id) ? 'Hide' : 'Show'}
+                            >
+                              {visiblePins.has(staff.id) ? (
+                                <EyeOff className="w-3 h-3" />
+                              ) : (
+                                <Eye className="w-3 h-3" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => copyStaffPin(staff.id, staff.pin!)}
+                              className="p-1 hover:bg-amber-100 dark:hover:bg-amber-900/40 rounded transition-colors"
+                              title="Copy"
+                            >
+                              {copiedPins.has(staff.id) ? (
+                                <Check className="w-3 h-3 text-green-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {staff.role === 'teacher' && assignedClasses.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium text-secondary-text mb-1">Assigned Classes:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {assignedClasses.map((cls) => (
+                              <span key={cls.id} className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                                {cls.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {staff.role === 'teacher' && getStaffAssignedSubjects(staff.id).length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium text-secondary-text mb-1">Assigned Subjects:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {getStaffAssignedSubjects(staff.id).map((subject) => (
+                              <span key={subject.id} className="text-xs px-2 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
+                                {subject.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 mt-3">
+                        <button
+                          onClick={() => handleEditClick(staff)}
+                          className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        {staff.role === 'teacher' && (
+                          <>
+                            <button
+                              onClick={() => handleAssignClassClick(staff)}
+                              className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors"
+                              title="Assign Classes"
+                            >
+                              <BookOpen className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleAssignSubjectClick(staff)}
+                              className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors"
+                              title="Assign Subjects"
+                            >
+                              <Filter className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -532,40 +882,31 @@ export default function StaffManagement() {
                   />
                 </div>
               </div>
-
-              <div className="border-t border-border dark:border-gray-800 pt-4">
-                <label className="label mb-1.5 block">PIN (Leave empty to keep current)</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type={showPin ? 'text' : 'password'}
-                    value={editFormData.pin}
-                    onChange={(e) => setEditFormData({ ...editFormData, pin: e.target.value })}
-                    className="input-field flex-1"
-                    placeholder="Enter new 4-digit PIN"
-                    maxLength={6}
-                  />
+              <div>
+                <label className="label mb-1.5 block flex items-center gap-2">
+                  New PIN (Leave blank to keep current)
                   <button
                     type="button"
                     onClick={() => setShowPin(!showPin)}
-                    className="p-3 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors"
+                    className="p-1 hover:bg-secondary-bg rounded"
                   >
-                    {showPin ? (
-                      <EyeOff className="w-5 h-5" />
-                    ) : (
-                      <Eye className="w-5 h-5" />
-                    )}
+                    {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
-                </div>
-                <p className="text-xs text-secondary-text mt-2">Current PIN: <span className="font-mono font-bold">{editingStaff.pin || 'N/A'}</span></p>
+                </label>
+                <input
+                  type={showPin ? 'text' : 'password'}
+                  value={editFormData.pin}
+                  onChange={(e) => setEditFormData({ ...editFormData, pin: e.target.value })}
+                  className="input-field"
+                  placeholder="••••••"
+                />
               </div>
-
               <div className="flex justify-end gap-3 pt-4 border-t border-border dark:border-gray-800">
                 <button
                   type="button"
                   onClick={() => {
                     setShowEditModal(false);
                     setEditingStaff(null);
-                    setShowPin(false);
                   }}
                   className="btn-secondary"
                 >
@@ -574,17 +915,242 @@ export default function StaffManagement() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="btn-primary flex items-center gap-2"
+                  className="btn-primary"
                 >
-                  {loading ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Edit2 className="w-4 h-4" />
-                  )}
-                  {loading ? 'Updating...' : 'Update Staff'}
+                  {loading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Assign Classes Modal */}
+      {showAssignClassModal && assigningStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-2xl bg-white dark:bg-dark-bg rounded-2xl shadow-xl"
+          >
+            <div className="p-6 border-b border-border dark:border-gray-800 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Assign Classes to {assigningStaff.full_name}</h2>
+                <p className="text-sm text-secondary-text mt-1">Select classes this teacher should be assigned to</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAssignClassModal(false);
+                  setAssigningStaff(null);
+                }}
+                className="p-1 hover:bg-secondary-bg rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {assignError && (
+                <div className="card bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-red-800 dark:text-red-200 text-sm">{assignError}</p>
+                  </div>
+                </div>
+              )}
+
+              {assignSuccess && (
+                <div className="card bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900">
+                  <div className="flex items-start gap-3">
+                    <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-green-800 dark:text-green-200 text-sm">{assignSuccess}</p>
+                  </div>
+                </div>
+              )}
+
+              {classList.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-secondary-text">No classes available</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+                  {classList.map((cls) => (
+                    <div
+                      key={cls.id}
+                      onClick={() => toggleClassSelection(cls.id)}
+                      className={`p-2 rounded-lg border-2 cursor-pointer transition-colors ${selectedClasses.has(cls.id)
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                        : 'border-border dark:border-gray-700 hover:border-blue-300'
+                        }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${selectedClasses.has(cls.id)
+                          ? 'border-blue-500 bg-blue-500'
+                          : 'border-gray-300 dark:border-gray-600'
+                          }`}>
+                          {selectedClasses.has(cls.id) && (
+                            <Check className="w-2.5 h-2.5 text-white" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-xs truncate">{cls.name}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-sm text-secondary-text pt-2">
+                {selectedClasses.size > 0 && `${selectedClasses.size} class(es) selected`}
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-border dark:border-gray-800 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowAssignClassModal(false);
+                  setAssigningStaff(null);
+                  setSelectedClasses(new Set());
+                }}
+                className="btn-secondary"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssignClasses}
+                className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading || selectedClasses.size === 0}
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="w-4 h-4" />
+                    Assign Classes
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Assign Subjects Modal */}
+      {showAssignSubjectModal && assigningStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-2xl bg-white dark:bg-dark-bg rounded-2xl shadow-xl"
+          >
+            <div className="p-6 border-b border-border dark:border-gray-800 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Assign Subjects to {assigningStaff.full_name}</h2>
+                <p className="text-sm text-secondary-text mt-1">Select subjects this teacher should be assigned to</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAssignSubjectModal(false);
+                  setAssigningStaff(null);
+                }}
+                className="p-1 hover:bg-secondary-bg rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {assignError && (
+                <div className="card bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-red-800 dark:text-red-200 text-sm">{assignError}</p>
+                  </div>
+                </div>
+              )}
+
+              {assignSuccess && (
+                <div className="card bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900">
+                  <div className="flex items-start gap-3">
+                    <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-green-800 dark:text-green-200 text-sm">{assignSuccess}</p>
+                  </div>
+                </div>
+              )}
+
+              {subjectList.length === 0 ? (
+                <div className="text-center py-12">
+                  <p className="text-secondary-text">No subjects available</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+                  {subjectList.map((subject) => (
+                    <div
+                      key={subject.id}
+                      onClick={() => toggleSubjectSelection(subject.id)}
+                      className={`p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedSubjects.has(subject.id)
+                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                        : 'border-border dark:border-gray-700 hover:border-purple-300'
+                        }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${selectedSubjects.has(subject.id)
+                          ? 'border-purple-500 bg-purple-500'
+                          : 'border-gray-300 dark:border-gray-600'
+                          }`}>
+                          {selectedSubjects.has(subject.id) && (
+                            <Check className="w-3 h-3 text-white" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-semibold">{subject.name}</h3>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-sm text-secondary-text pt-2">
+                {selectedSubjects.size > 0 && `${selectedSubjects.size} subject(s) selected`}
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-border dark:border-gray-800 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowAssignSubjectModal(false);
+                  setAssigningStaff(null);
+                  setSelectedSubjects(new Set());
+                }}
+                className="btn-secondary"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssignSubjects}
+                className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="w-4 h-4" />
+                    Assign Subjects
+                  </>
+                )}
+              </button>
+            </div>
           </motion.div>
         </div>
       )}

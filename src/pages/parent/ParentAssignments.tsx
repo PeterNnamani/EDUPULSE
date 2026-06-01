@@ -1,56 +1,52 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ClipboardList, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { ClipboardList, CheckCircle, Clock, AlertCircle, Loader } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
+import { getStudentAssignments } from '@/services/assignmentService';
 
-interface AssignmentRecord {
+interface AssignmentWithSubmission {
     id: string;
     title: string;
-    subject: string;
     description?: string;
     due_date: string;
-    status: 'pending' | 'submitted' | 'graded';
-    score?: number;
-    maximum_score?: number;
-    submitted_at?: string;
-    feedback?: string;
+    assignment_type: string;
+    total_marks: number;
+    status: 'pending' | 'submitted' | 'graded' | 'active' | 'closed';
+    submissions?: Array<{
+        status: string;
+        submitted_at?: string;
+        score?: number;
+        remarks?: string;
+    }>;
 }
 
 export default function ParentAssignments() {
-    const { user } = useAppStore();
-    const [selectedChildId, setSelectedChildId] = useState<string>('');
-    const [assignments, setAssignments] = useState<AssignmentRecord[]>([]);
+    const { user, selectedParentChildId, setSelectedParentChildId } = useAppStore();
+    const [assignments, setAssignments] = useState<AssignmentWithSubmission[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const selectedChildData = user?.children?.find((c: any) => c.id === selectedChildId);
+    const selectedChildData = user?.children?.find((c: any) => c.id === selectedParentChildId);
 
-    // Set default child
+    // Set default child from store or initialize from first child
     useEffect(() => {
-        if (user?.children && user.children.length > 0 && !selectedChildId) {
-            setSelectedChildId(user.children[0].id);
+        if (user?.children && user.children.length > 0) {
+            if (!selectedParentChildId) {
+                setSelectedParentChildId(user.children[0].id);
+            }
         }
-    }, [user?.children, selectedChildId]);
+    }, [user?.children, selectedParentChildId, setSelectedParentChildId]);
 
     // Fetch assignments for selected child
     useEffect(() => {
-        if (!selectedChildId || !user?.schoolId) return;
+        if (!selectedParentChildId || !user?.schoolId) return;
 
         const fetchAssignments = async () => {
             setLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('assignment_submissions')
-                    .select('*')
-                    .eq('student_id', selectedChildId)
-                    .eq('school_id', user.schoolId)
-                    .order('due_date', { ascending: true });
-
-                if (error) {
-                    console.error('[PARENT_ASSIGNMENTS] Error fetching data:', error);
-                } else {
-                    setAssignments(data || []);
-                }
+                const studentAssignments = await getStudentAssignments(user.schoolId, selectedParentChildId);
+                setAssignments(studentAssignments);
+                console.log('[PARENT_ASSIGNMENTS] Fetched assignments:', studentAssignments);
             } catch (error) {
                 console.error('[PARENT_ASSIGNMENTS] Fetch error:', error);
             } finally {
@@ -59,12 +55,19 @@ export default function ParentAssignments() {
         };
 
         fetchAssignments();
-    }, [selectedChildId, user?.schoolId]);
+    }, [selectedParentChildId, user?.schoolId]);
+
+    const getSubmissionStatus = (assignment: AssignmentWithSubmission) => {
+        if (!assignment.submissions || assignment.submissions.length === 0) {
+            return 'pending';
+        }
+        return assignment.submissions[0].status;
+    };
 
     const stats = {
-        pending: assignments.filter(a => a.status === 'pending').length,
-        submitted: assignments.filter(a => a.status === 'submitted').length,
-        graded: assignments.filter(a => a.status === 'graded').length,
+        pending: assignments.filter(a => getSubmissionStatus(a) === 'pending').length,
+        submitted: assignments.filter(a => getSubmissionStatus(a) === 'submitted').length,
+        graded: assignments.filter(a => getSubmissionStatus(a) === 'graded').length,
         total: assignments.length,
     };
 
@@ -118,8 +121,8 @@ export default function ParentAssignments() {
                 >
                     <label className="block text-sm font-semibold mb-3">Select Child</label>
                     <select
-                        value={selectedChildId}
-                        onChange={(e) => setSelectedChildId(e.target.value)}
+                        value={selectedParentChildId || ''}
+                        onChange={(e) => setSelectedParentChildId(e.target.value)}
                         className="w-full px-4 py-2 rounded-lg bg-secondary-bg dark:bg-dark-card border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
                     >
                         {user.children.map((child: any) => (
@@ -203,7 +206,7 @@ export default function ParentAssignments() {
 
                 {loading ? (
                     <div className="flex items-center justify-center py-8">
-                        <p className="text-secondary-text">Loading assignments...</p>
+                        <Loader className="w-6 h-6 animate-spin text-secondary-text" />
                     </div>
                 ) : assignments.length === 0 ? (
                     <div className="text-center py-8">
@@ -212,68 +215,70 @@ export default function ParentAssignments() {
                     </div>
                 ) : (
                     <div className="space-y-3">
-                        {assignments.map((assignment) => (
-                            <div
-                                key={assignment.id}
-                                className={`p-4 rounded-lg border ${isOverdue(assignment.due_date, assignment.status)
+                        {assignments.map((assignment) => {
+                            const submissionStatus = getSubmissionStatus(assignment);
+                            const submission = assignment.submissions?.[0];
+                            return (
+                                <div
+                                    key={assignment.id}
+                                    className={`p-4 rounded-lg border ${isOverdue(assignment.due_date, submissionStatus)
                                         ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20'
                                         : 'border-gray-300 dark:border-gray-600 bg-secondary-bg dark:bg-dark-card'
-                                    } hover:shadow-md transition-all`}
-                            >
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex items-start gap-3 flex-1">
-                                        <div className="mt-1">
-                                            {getStatusIcon(assignment.status)}
+                                        } hover:shadow-md transition-all`}
+                                >
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="flex items-start gap-3 flex-1">
+                                            <div className="mt-1">
+                                                {getStatusIcon(submissionStatus)}
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="font-semibold text-lg">{assignment.title}</h3>
+                                                    {isOverdue(assignment.due_date, submissionStatus) && (
+                                                        <span className="px-2 py-1 text-xs font-bold bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-100 rounded">
+                                                            OVERDUE
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-sm text-secondary-text mt-1">{assignment.assignment_type} • {assignment.total_marks} marks</p>
+                                                {assignment.description && (
+                                                    <p className="text-sm text-secondary-text mt-2">{assignment.description}</p>
+                                                )}
+                                                <div className="flex items-center gap-4 mt-3 text-sm text-secondary-text">
+                                                    <span>📅 Due: {new Date(assignment.due_date).toLocaleDateString()}</span>
+                                                    {submission?.submitted_at && (
+                                                        <span>✓ Submitted: {new Date(submission.submitted_at).toLocaleDateString()}</span>
+                                                    )}
+                                                </div>
+                                                {submission?.remarks && (
+                                                    <div className="mt-3 p-3 rounded bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500">
+                                                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Remarks:</p>
+                                                        <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">{submission.remarks}</p>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2">
-                                                <h3 className="font-semibold text-lg">{assignment.title}</h3>
-                                                {isOverdue(assignment.due_date, assignment.status) && (
-                                                    <span className="px-2 py-1 text-xs font-bold bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-100 rounded">
-                                                        OVERDUE
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="text-sm text-secondary-text mt-1">{assignment.subject}</p>
-                                            {assignment.description && (
-                                                <p className="text-sm text-secondary-text mt-2">{assignment.description}</p>
-                                            )}
-                                            <div className="flex items-center gap-4 mt-3 text-sm text-secondary-text">
-                                                <span>📅 Due: {new Date(assignment.due_date).toLocaleDateString()}</span>
-                                                {assignment.submitted_at && (
-                                                    <span>✓ Submitted: {new Date(assignment.submitted_at).toLocaleDateString()}</span>
-                                                )}
-                                            </div>
-                                            {assignment.feedback && (
-                                                <div className="mt-3 p-3 rounded bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-500">
-                                                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">Feedback:</p>
-                                                    <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">{assignment.feedback}</p>
+
+                                        <div className="flex flex-col items-end gap-2">
+                                            <span className={`px-3 py-1 rounded-full text-sm font-semibold capitalize ${getStatusColor(submissionStatus)}`}>
+                                                {submissionStatus}
+                                            </span>
+                                            {submissionStatus === 'graded' && submission?.score !== undefined && (
+                                                <div className="text-right">
+                                                    <p className="font-bold text-lg">
+                                                        {submission.score}
+                                                        <span className="text-sm text-secondary-text"> / {assignment.total_marks}</span>
+                                                    </p>
+                                                    <p className="text-xs text-secondary-text">
+                                                        {Math.round((submission.score / assignment.total_marks) * 100)}%
+                                                    </p>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
-
-                                    <div className="flex flex-col items-end gap-2">
-                                        <span className={`px-3 py-1 rounded-full text-sm font-semibold capitalize ${getStatusColor(assignment.status)}`}>
-                                            {assignment.status}
-                                        </span>
-                                        {assignment.status === 'graded' && assignment.score !== undefined && (
-                                            <div className="text-right">
-                                                <p className="font-bold text-lg">
-                                                    {assignment.score}
-                                                    {assignment.maximum_score && <span className="text-sm text-secondary-text"> / {assignment.maximum_score}</span>}
-                                                </p>
-                                                {assignment.maximum_score && (
-                                                    <p className="text-xs text-secondary-text">
-                                                        {Math.round((assignment.score / assignment.maximum_score) * 100)}%
-                                                    </p>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
             </motion.div>

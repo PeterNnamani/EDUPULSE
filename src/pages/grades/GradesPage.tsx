@@ -1,27 +1,142 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Plus, Download, Calculator } from 'lucide-react';
+import { Search, Plus, Download, Calculator, AlertCircle, Loader } from 'lucide-react';
+import { useAppStore } from '@/store';
+import { getTeacherClasses, getClassStudents } from '@/services/classService';
+import { bulkRecordGrades, getStudentGrades } from '@/services/gradeService';
+import { supabase } from '@/lib/supabase';
+import { getCurrentTerm, getTermsForSession, getCurrentSession } from '@/utils/calendarUtils';
+
+interface Student {
+  id: string;
+  student_id: string;
+  first_name: string;
+  last_name: string;
+}
+
+interface ClassData {
+  id: string;
+  name: string;
+  students: number;
+}
+
+interface Subject {
+  id: string;
+  name: string;
+}
+
+interface AcademicTerm {
+  id: string;
+  name: string;
+}
 
 export default function GradesPage() {
-  const [selectedClass, setSelectedClass] = useState('SS1A');
-  const [selectedSubject, setSelectedSubject] = useState('Mathematics');
+  const { user } = useAppStore();
+  const [classes, setClasses] = useState<ClassData[]>([]);
+  const [selectedClass, setSelectedClass] = useState<string>('');
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedSubject, setSelectedSubject] = useState<string>('');
+  const [academicTerms, setAcademicTerms] = useState<AcademicTerm[]>([]);
+  const [selectedTerm, setSelectedTerm] = useState<string>('');
   const [selectedAssessment, setSelectedAssessment] = useState('ca1');
+  const [students, setStudents] = useState<Student[]>([]);
+  const [grades, setGrades] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [successMessage, setSuccessMessage] = useState<string>('');
 
-  const mockGrades = [
-    { id: '1', student: 'John Doe', score: 75, grade: 'B', maxScore: 100 },
-    { id: '2', student: 'Jane Smith', score: 82, grade: 'A', maxScore: 100 },
-    { id: '3', student: 'Emeka Brown', score: 58, grade: 'D', maxScore: 100 },
-    { id: '4', student: 'Chioma Okonkwo', score: 90, grade: 'A', maxScore: 100 },
-    { id: '5', student: 'Ahmed Muhammad', score: 68, grade: 'C', maxScore: 100 },
-    { id: '6', student: 'Fatima Bello', score: 45, grade: 'F', maxScore: 100 },
-    { id: '7', student: 'Yusuf Adam', score: 72, grade: 'B', maxScore: 100 },
-    { id: '8', student: 'Aisha Yusuf', score: 88, grade: 'A', maxScore: 100 },
+  const assessments = [
+    { value: 'ca1', label: 'CA 1' },
+    { value: 'ca2', label: 'CA 2' },
+    { value: 'ca3', label: 'CA 3' },
+    { value: 'exam', label: 'Exam' },
   ];
 
-  const [grades, setGrades] = useState<Record<string, number>>({});
+  // Load initial data
+  useEffect(() => {
+    const loadInitialData = async () => {
+      if (!user?.id || !user?.schoolId) {
+        setError('User information not found');
+        setLoading(false);
+        return;
+      }
 
-  const handleScoreChange = (studentId: string, score: number) => {
-    setGrades({ ...grades, [studentId]: score });
+      try {
+        // Load teacher's classes
+        const teacherClasses = await getTeacherClasses(user.schoolId, user.id);
+        setClasses(teacherClasses);
+        if (teacherClasses.length > 0) {
+          setSelectedClass(teacherClasses[0].id);
+        }
+
+        // Load subjects
+        const { data: subjectsData, error: subjectsError } = await supabase
+          .from('subjects')
+          .select('id, name')
+          .eq('school_id', user.schoolId)
+          .eq('is_active', true);
+
+        if (!subjectsError && subjectsData) {
+          setSubjects(subjectsData);
+          if (subjectsData.length > 0) {
+            setSelectedSubject(subjectsData[0].id);
+          }
+        }
+
+        // Load academic terms - automatically get current term
+        const currentTerm = await getCurrentTerm(user.schoolId);
+        if (currentTerm) {
+          setAcademicTerms([currentTerm]);
+          setSelectedTerm(currentTerm.id);
+          console.log('✓ Current academic term loaded:', currentTerm.name);
+        } else {
+          console.warn('⚠️ No current term found, loading all terms');
+          const { data: termsData } = await supabase
+            .from('academic_terms')
+            .select('id, name')
+            .eq('school_id', user.schoolId)
+            .order('start_date', { ascending: false })
+            .limit(5);
+          if (termsData && termsData.length > 0) {
+            setAcademicTerms(termsData);
+            setSelectedTerm(termsData[0].id);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading initial data:', err);
+        setError('Failed to load data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadInitialData();
+  }, [user]);
+
+  // Load students when class changes
+  useEffect(() => {
+    const loadStudents = async () => {
+      if (!selectedClass) return;
+
+      try {
+        const classStudents = await getClassStudents(selectedClass);
+        setStudents(classStudents);
+        setGrades({});
+        setSuccessMessage('');
+      } catch (err) {
+        console.error('Error loading students:', err);
+        setError('Failed to load students');
+      }
+    };
+
+    loadStudents();
+  }, [selectedClass]);
+
+  const handleScoreChange = (studentId: string, score: string) => {
+    const numScore = score === '' ? 0 : Math.min(100, Math.max(0, parseFloat(score) || 0));
+    setGrades({ ...grades, [studentId]: numScore });
+    setSuccessMessage('');
   };
 
   const calculateGrade = (score: number): string => {
@@ -32,20 +147,87 @@ export default function GradesPage() {
     return 'F';
   };
 
-  const classes = ['SS1A', 'SS1B', 'SS2A', 'SS2B', 'SS3A', 'SS3B'];
-  const subjects = ['Mathematics', 'English', 'Physics', 'Chemistry', 'Biology'];
-  const assessments = [
-    { value: 'ca1', label: 'CA 1' },
-    { value: 'ca2', label: 'CA 2' },
-    { value: 'ca3', label: 'CA 3' },
-    { value: 'exam', label: 'Exam' },
-  ];
+  const handleSaveGrades = async () => {
+    if (!selectedClass || !selectedSubject || !selectedTerm || !user?.schoolId || !user?.id) {
+      setError('Missing required information');
+      return;
+    }
+
+    if (Object.keys(grades).length === 0) {
+      setError('Please enter grades for at least one student');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      const gradesData = students.map((student) => ({
+        studentId: student.id,
+        score: grades[student.id] || 0,
+        maxScore: 100,
+      }));
+
+      const result = await bulkRecordGrades(
+        user.schoolId,
+        selectedClass,
+        selectedSubject,
+        selectedTerm,
+        selectedAssessment,
+        gradesData,
+        user.id
+      );
+
+      if (result.success) {
+        setSuccessMessage(`Grades saved successfully for ${result.recorded} students`);
+        setGrades({});
+      } else {
+        setError(result.error || 'Failed to save grades');
+      }
+    } catch (err) {
+      console.error('Error saving grades:', err);
+      setError('Failed to save grades');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const stats = {
-    average: mockGrades.reduce((acc, g) => acc + g.score, 0) / mockGrades.length,
-    highest: Math.max(...mockGrades.map(g => g.score)),
-    lowest: Math.min(...mockGrades.map(g => g.score)),
+    average: students.length > 0
+      ? Object.values(grades).reduce((a, b) => a + (b || 0), 0) / Math.max(Object.keys(grades).length, 1)
+      : 0,
+    highest: students.length > 0 ? Math.max(...Object.values(grades), 0) : 0,
+    lowest: students.length > 0 && Object.values(grades).length > 0 ? Math.min(...Object.values(grades)) : 0,
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center space-y-4">
+          <Loader className="w-8 h-8 animate-spin mx-auto" />
+          <p className="text-secondary-text">Loading grades data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (classes.length === 0) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">Grades</h1>
+        <div className="card bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-amber-900 dark:text-amber-100">No classes assigned</p>
+              <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">You don't have any classes assigned yet.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -63,12 +245,52 @@ export default function GradesPage() {
             <Download className="w-4 h-4" />
             Export
           </button>
-          <button className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            Save Grades
+          <button
+            onClick={handleSaveGrades}
+            disabled={saving || students.length === 0}
+            className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? (
+              <>
+                <Loader className="w-4 h-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                Save Grades
+              </>
+            )}
           </button>
         </div>
       </div>
+
+      {/* Messages */}
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900"
+        >
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <p className="text-red-800 dark:text-red-200">{error}</p>
+          </div>
+        </motion.div>
+      )}
+
+      {successMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900"
+        >
+          <div className="flex items-start gap-3">
+            <Plus className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+            <p className="text-green-800 dark:text-green-200">{successMessage}</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Filters */}
       <div className="card">
@@ -80,8 +302,9 @@ export default function GradesPage() {
               onChange={(e) => setSelectedClass(e.target.value)}
               className="input-field"
             >
+              <option value="">Select a class</option>
               {classes.map((cls) => (
-                <option key={cls} value={cls}>{cls}</option>
+                <option key={cls.id} value={cls.id}>{cls.name}</option>
               ))}
             </select>
           </div>
@@ -92,8 +315,9 @@ export default function GradesPage() {
               onChange={(e) => setSelectedSubject(e.target.value)}
               className="input-field"
             >
+              <option value="">Select a subject</option>
               {subjects.map((sub) => (
-                <option key={sub} value={sub}>{sub}</option>
+                <option key={sub.id} value={sub.id}>{sub.name}</option>
               ))}
             </select>
           </div>
@@ -110,8 +334,17 @@ export default function GradesPage() {
             </select>
           </div>
           <div>
-            <label className="label mb-1.5 block">Max Score</label>
-            <input type="number" className="input-field" value={100} readOnly />
+            <label className="label mb-1.5 block">Term</label>
+            <select
+              value={selectedTerm}
+              onChange={(e) => setSelectedTerm(e.target.value)}
+              className="input-field"
+            >
+              <option value="">Select a term</option>
+              {academicTerms.map((term) => (
+                <option key={term.id} value={term.id}>{term.name}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -149,37 +382,41 @@ export default function GradesPage() {
               </tr>
             </thead>
             <tbody>
-              {mockGrades.map((item, index) => {
-                const score = grades[item.id] ?? item.score;
+              {students.map((student) => {
+                const score = grades[student.id] ?? 0;
                 const grade = calculateGrade(score);
+                const fullName = `${student.first_name} ${student.last_name}`;
                 return (
-                  <tr key={item.id} className="table-row">
+                  <tr key={student.id} className="table-row">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-medium text-sm">
-                          {item.student.split(' ').map(n => n[0]).join('')}
+                          {`${student.first_name[0]}${student.last_name[0]}`.toUpperCase()}
                         </div>
-                        <span className="font-medium">{item.student}</span>
+                        <div>
+                          <span className="font-medium">{fullName}</span>
+                          <span className="text-xs text-secondary-text ml-2">{student.student_id}</span>
+                        </div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <input
                         type="number"
-                        value={score}
-                        onChange={(e) => handleScoreChange(item.id, parseInt(e.target.value) || 0)}
+                        value={score === 0 ? '' : score}
+                        onChange={(e) => handleScoreChange(student.id, e.target.value)}
                         className="input-field w-24 text-center mx-auto block"
                         min="0"
                         max="100"
+                        placeholder="0"
                       />
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`badge ${
-                        grade === 'A' ? 'badge-success' :
+                      <span className={`badge ${grade === 'A' ? 'badge-success' :
                         grade === 'B' ? 'badge-info' :
-                        grade === 'C' ? 'badge-warning' :
-                        grade === 'D' ? 'badge-warning' :
-                        'badge-danger'
-                      }`}>
+                          grade === 'C' ? 'badge-warning' :
+                            grade === 'D' ? 'badge-warning' :
+                              'badge-danger'
+                        }`}>
                         {grade}
                       </span>
                     </td>
@@ -193,6 +430,13 @@ export default function GradesPage() {
                   </tr>
                 );
               })}
+              {students.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-secondary-text">
+                    No students in selected class
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

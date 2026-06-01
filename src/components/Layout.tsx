@@ -23,12 +23,15 @@ import {
 import { useAppStore } from '@/store';
 import { useState, useEffect } from 'react';
 import { ChatBot, WelcomeMessage } from '@/components/Chatbot';
+import NotificationBell from '@/components/NotificationBell';
+import { useNotificationSound } from '@/hooks/useNotificationSound';
 
 const adminNavItems = [
   { label: 'Dashboard', path: '/admin', icon: LayoutDashboard },
   { label: 'Students', path: '/admin/students', icon: Users },
   { label: 'Staff', path: '/admin/staff', icon: GraduationCap },
   { label: 'Classes', path: '/admin/classes', icon: Building },
+  { label: 'Subjects', path: '/admin/subjects', icon: BookOpen },
   { label: 'Subscriptions', path: '/admin/subscriptions', icon: DollarSign },
 ];
 
@@ -86,6 +89,9 @@ export default function Layout() {
   const [showWelcome, setShowWelcome] = useState(true);
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
 
+  // Activate notification sounds and real-time listening
+  useNotificationSound();
+
   const navItems = user ? roleNavMap[user.role] || [] : [];
 
   // Show welcome message only once after login
@@ -112,9 +118,12 @@ export default function Layout() {
             {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
           <h1 className="font-semibold text-lg">EduPulse</h1>
-          <button onClick={toggleDarkMode} className="p-2">
-            {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </button>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <button onClick={toggleDarkMode} className="p-2">
+              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -203,33 +212,8 @@ export default function Layout() {
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Notifications */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowNotifications(!showNotifications)}
-                  className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors relative"
-                >
-                  <Bell className="w-5 h-5" />
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-                </button>
-
-                {showNotifications && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="absolute right-0 top-12 w-80 bg-white dark:bg-dark-card border border-border dark:border-gray-800 rounded-xl shadow-elevated z-50"
-                  >
-                    <div className="p-4 border-b border-border dark:border-gray-800">
-                      <h3 className="font-medium">Notifications</h3>
-                    </div>
-                    <div className="max-h-80 overflow-y-auto p-2">
-                      <div className="text-center py-8 text-secondary-text">
-                        No new notifications
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </div>
+              {/* Notifications Bell Component */}
+              <NotificationBell />
 
               {/* Profile */}
               <div className="relative">
