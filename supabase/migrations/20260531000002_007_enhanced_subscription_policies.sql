@@ -7,6 +7,14 @@ DROP POLICY IF EXISTS "Subscriptions can be updated" ON subscriptions;
 DROP POLICY IF EXISTS "Invoices can be inserted" ON invoices;
 DROP POLICY IF EXISTS "Invoices can be updated" ON invoices;
 
+-- Drop newer policies if they exist
+DROP POLICY IF EXISTS "Subscriptions insert policy" ON subscriptions;
+DROP POLICY IF EXISTS "Subscriptions select policy" ON subscriptions;
+DROP POLICY IF EXISTS "Subscriptions update policy" ON subscriptions;
+DROP POLICY IF EXISTS "Invoices insert policy" ON invoices;
+DROP POLICY IF EXISTS "Invoices select policy" ON invoices;
+DROP POLICY IF EXISTS "Invoices update policy" ON invoices;
+
 -- SUBSCRIPTIONS POLICIES
 
 -- Allow authenticated staff to insert subscriptions for their school

@@ -3,10 +3,12 @@ import { motion } from 'framer-motion';
 import { Plus, Search, Filter, Edit2, Trash2, UserPlus, Copy, Check, Eye, EyeOff, BookOpen, X, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { createStaff, updateStaff } from '@/services/authService';
+import { notificationTriggerService } from '@/services/notificationTriggerService';
 import { supabase } from '@/lib/supabase';
 
 interface Staff {
   id: string;
+  user_id: string | null;
   staff_id: string;
   full_name: string;
   email: string | null;
@@ -326,6 +328,27 @@ export default function StaffManagement() {
         .update({ class_teacher_id: assigningStaff.id })
         .in('id', Array.from(selectedClasses));
 
+      // Trigger notifications for each assigned class (if user_id exists)
+      if (assigningStaff.user_id) {
+        for (const classId of selectedClasses) {
+          const classData = classList.find(c => c.id === classId);
+          if (classData) {
+            try {
+              await notificationTriggerService.onTeacherClassAssignment(
+                user.schoolId,
+                assigningStaff.user_id,
+                assigningStaff.full_name,
+                classData.name,
+                classId
+              );
+            } catch (notifError) {
+              console.error('[STAFF_MANAGEMENT] Error triggering notification:', notifError);
+              // Don't fail the assignment if notification fails
+            }
+          }
+        }
+      }
+
       setAssignSuccess(`Successfully assigned ${selectedClasses.size} class(es) to ${assigningStaff.full_name}`);
 
       setTimeout(() => {
@@ -391,6 +414,29 @@ export default function StaffManagement() {
           .insert(assignments);
 
         if (error) throw error;
+
+        // Trigger notification for subject assignments (if user_id exists)
+        if (assigningStaff.user_id) {
+          try {
+            const subjectNames = Array.from(selectedSubjects)
+              .map(subjectId => subjectList.find(s => s.id === subjectId)?.name)
+              .filter(Boolean)
+              .join(', ');
+
+            if (subjectNames) {
+              await notificationTriggerService.onTeacherClassAssignment(
+                user.schoolId,
+                assigningStaff.user_id,
+                assigningStaff.full_name,
+                `Subjects: ${subjectNames}`,
+                '' // No specific class ID for subjects
+              );
+            }
+          } catch (notifError) {
+            console.error('[STAFF_MANAGEMENT] Error triggering subject notification:', notifError);
+            // Don't fail the assignment if notification fails
+          }
+        }
       }
 
       setAssignSuccess(`Successfully assigned ${selectedSubjects.size} subject(s) to ${assigningStaff.full_name}`);

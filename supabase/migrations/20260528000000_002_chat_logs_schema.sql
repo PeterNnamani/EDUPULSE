@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS chat_logs (
 -- Enable RLS
 ALTER TABLE chat_logs ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist (idempotent)
+DROP POLICY IF EXISTS "users_can_view_own_chat_logs" ON chat_logs;
+DROP POLICY IF EXISTS "users_can_insert_own_messages" ON chat_logs;
+DROP POLICY IF EXISTS "users_can_update_own_messages" ON chat_logs;
+
 -- Policy: Users can only view their own chat logs
 CREATE POLICY "users_can_view_own_chat_logs" ON chat_logs
   FOR SELECT USING (user_id = auth.uid());
@@ -66,6 +71,11 @@ CREATE TABLE IF NOT EXISTS chat_preferences (
 
 -- Enable RLS on preferences
 ALTER TABLE chat_preferences ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing preferences policies if they exist (idempotent)
+DROP POLICY IF EXISTS "users_can_view_own_preferences" ON chat_preferences;
+DROP POLICY IF EXISTS "users_can_update_own_preferences" ON chat_preferences;
+DROP POLICY IF EXISTS "users_can_insert_own_preferences" ON chat_preferences;
 
 -- Policy: Users can only view their own preferences
 CREATE POLICY "users_can_view_own_preferences" ON chat_preferences

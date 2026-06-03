@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS staff_subjects (
 -- Add RLS policy for staff_subjects
 ALTER TABLE staff_subjects ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist (idempotent)
+DROP POLICY IF EXISTS "staff_subjects_read" ON staff_subjects;
+DROP POLICY IF EXISTS "staff_subjects_insert" ON staff_subjects;
+DROP POLICY IF EXISTS "staff_subjects_update" ON staff_subjects;
+DROP POLICY IF EXISTS "staff_subjects_delete" ON staff_subjects;
+
 -- Allow authenticated users to view staff_subjects for their school
 CREATE POLICY "staff_subjects_read" ON staff_subjects
   FOR SELECT USING (true);

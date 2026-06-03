@@ -285,6 +285,21 @@ ALTER TABLE archived_risk_assessments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE term_automation_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE session_transitions ENABLE ROW LEVEL SECURITY;
 
+-- Drop existing policies if they exist (idempotent)
+DROP POLICY IF EXISTS "class_definitions_school_isolation" ON class_definitions;
+DROP POLICY IF EXISTS "promotion_rules_school_isolation" ON promotion_rules;
+DROP POLICY IF EXISTS "academic_calendars_school_isolation" ON academic_calendars;
+DROP POLICY IF EXISTS "student_academic_records_school_isolation" ON student_academic_records;
+DROP POLICY IF EXISTS "graduation_records_school_isolation" ON graduation_records;
+DROP POLICY IF EXISTS "fee_structures_school_isolation" ON fee_structures;
+DROP POLICY IF EXISTS "fee_obligations_school_isolation" ON fee_obligations;
+DROP POLICY IF EXISTS "archived_attendance_school_isolation" ON archived_attendance;
+DROP POLICY IF EXISTS "archived_assignments_school_isolation" ON archived_assignments;
+DROP POLICY IF EXISTS "archived_results_school_isolation" ON archived_results;
+DROP POLICY IF EXISTS "archived_risk_assessments_school_isolation" ON archived_risk_assessments;
+DROP POLICY IF EXISTS "term_automation_logs_school_isolation" ON term_automation_logs;
+DROP POLICY IF EXISTS "session_transitions_school_isolation" ON session_transitions;
+
 -- RLS Policies for School Isolation
 CREATE POLICY "class_definitions_school_isolation"
   ON class_definitions FOR ALL
@@ -365,15 +380,15 @@ CREATE POLICY "session_transitions_school_isolation"
   ));
 
 -- Create indexes for performance
-CREATE INDEX idx_promotion_rules_school ON promotion_rules(school_id);
-CREATE INDEX idx_student_academic_records_student ON student_academic_records(student_id);
-CREATE INDEX idx_student_academic_records_session ON student_academic_records(session_id);
-CREATE INDEX idx_student_academic_records_term ON student_academic_records(term_id);
-CREATE INDEX idx_graduation_records_student ON graduation_records(student_id);
-CREATE INDEX idx_fee_structures_session ON fee_structures(session_id);
-CREATE INDEX idx_fee_obligations_student ON fee_obligations(student_id);
-CREATE INDEX idx_fee_obligations_session ON fee_obligations(session_id);
-CREATE INDEX idx_archived_attendance_student ON archived_attendance(student_id);
-CREATE INDEX idx_archived_results_student ON archived_results(student_id);
-CREATE INDEX idx_term_automation_logs_session ON term_automation_logs(session_id);
-CREATE INDEX idx_session_transitions_school ON session_transitions(school_id);
+CREATE INDEX IF NOT EXISTS idx_promotion_rules_school ON promotion_rules(school_id);
+CREATE INDEX IF NOT EXISTS idx_student_academic_records_student ON student_academic_records(student_id);
+CREATE INDEX IF NOT EXISTS idx_student_academic_records_session ON student_academic_records(session_id);
+CREATE INDEX IF NOT EXISTS idx_student_academic_records_term ON student_academic_records(term_id);
+CREATE INDEX IF NOT EXISTS idx_graduation_records_student ON graduation_records(student_id);
+CREATE INDEX IF NOT EXISTS idx_fee_structures_session ON fee_structures(session_id);
+CREATE INDEX IF NOT EXISTS idx_fee_obligations_student ON fee_obligations(student_id);
+CREATE INDEX IF NOT EXISTS idx_fee_obligations_session ON fee_obligations(session_id);
+CREATE INDEX IF NOT EXISTS idx_archived_attendance_student ON archived_attendance(student_id);
+CREATE INDEX IF NOT EXISTS idx_archived_results_student ON archived_results(student_id);
+CREATE INDEX IF NOT EXISTS idx_term_automation_logs_session ON term_automation_logs(session_id);
+CREATE INDEX IF NOT EXISTS idx_session_transitions_school ON session_transitions(school_id);

@@ -1,74 +1,70 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Bell, Check, Archive, X, Clock, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
 import { useNotificationSound } from '@/hooks/useNotificationSound';
-import { supabase } from '@/lib/supabase';
+import { notificationService, Notification } from '@/services/notificationService';
 
 interface NotificationBellProps {
     className?: string;
 }
 
-interface Notification {
-    id: string;
-    title: string;
-    message: string;
-    priority: 'low' | 'medium' | 'high' | 'critical';
-    status: 'unread' | 'read' | 'archived';
-    createdAt: string;
-    actionUrl?: string;
-}
-
 export default function NotificationBell({ className = '' }: NotificationBellProps) {
-    const { user, currentSchool } = useAppStore();
+    const { user } = useAppStore();
     const [showPanel, setShowPanel] = useState(false);
-    const [unreadCount, setUnreadCount] = useState(0);
-    const [recentNotifications, setRecentNotifications] = useState<Notification[]>([]);
     const { playSound } = useNotificationSound();
 
-    // Fetch notifications
+    // Fetch notifications with real-time polling
     const { data: notifications = [], isLoading, refetch } = useQuery({
-        queryKey: ['notifications', user?.id],
+        queryKey: ['notifications', user?.id, user?.schoolId],
         queryFn: async () => {
-            if (!user?.id || !currentSchool?.id) return [];
+            if (!user?.id || !user?.schoolId) return [];
             try {
-                // This would fetch from your notification service
-                // For now returning empty array
-                return [];
+                const notifs = await notificationService.getNotifications(
+                    user.schoolId,
+                    user.id,
+                    {
+                        limit: 50,
+                        status: 'unread'
+                    }
+                );
+                return notifs;
             } catch (error) {
                 console.error('Error fetching notifications:', error);
                 return [];
             }
         },
-        refetchInterval: 10000
+        refetchInterval: 5000, // Poll every 5 seconds for new notifications
+        enabled: !!user?.id && !!user?.schoolId
     });
 
     // Fetch notification counts
-    useQuery({
-        queryKey: ['notification-counts', user?.id],
+    const { data: counts = { unread: 0, total: 0, archived: 0 } } = useQuery({
+        queryKey: ['notification-counts', user?.id, user?.schoolId],
         queryFn: async () => {
-            if (!user?.id || !currentSchool?.id) return null;
+            if (!user?.id || !user?.schoolId) return { unread: 0, total: 0, archived: 0 };
             try {
-                // This would fetch count from your service
-                setUnreadCount(0);
-                return { unread: 0 };
+                return await notificationService.getNotificationCounts(
+                    user.schoolId,
+                    user.id
+                );
             } catch (error) {
                 console.error('Error fetching notification counts:', error);
-                return { unread: 0 };
+                return { unread: 0, total: 0, archived: 0 };
             }
         },
-        refetchInterval: 10000
+        refetchInterval: 5000, // Poll every 5 seconds for updated counts
+        enabled: !!user?.id && !!user?.schoolId
     });
-
-    // Real-time subscription is handled by useNotificationSound hook
-    // No need to set it up again here
 
     const handleMarkAsRead = useCallback(
         async (notificationId: string) => {
             try {
-                // Mark notification as read in your service
-                refetch();
+                const result = await notificationService.markAsRead(notificationId);
+                if (result.success) {
+                    refetch();
+                }
             } catch (error) {
                 console.error('Error marking notification as read:', error);
             }
@@ -79,8 +75,10 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
     const handleArchive = useCallback(
         async (notificationId: string) => {
             try {
-                // Archive notification in your service
-                refetch();
+                const result = await notificationService.archive(notificationId);
+                if (result.success) {
+                    refetch();
+                }
             } catch (error) {
                 console.error('Error archiving notification:', error);
             }
@@ -146,7 +144,7 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
         <div className={`relative ${className}`}>
             {/* Recent Notification Bubbles */}
             <AnimatePresence>
-                {recentNotifications.map((notification, index) => (
+                {notifications.slice(0, 3).map((notification, index) => (
                     <motion.div
                         key={`recent-${notification.id}`}
                         initial={{ opacity: 0, y: -20, x: 20 }}
@@ -162,7 +160,7 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
                                 <p className="text-xs text-gray-600 mt-1 line-clamp-2">{notification.message}</p>
                                 <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
                                     <Clock className="w-3 h-3" />
-                                    Just now
+                                    {formatTime(notification.createdAt)}
                                 </div>
                             </div>
                         </div>
@@ -177,13 +175,13 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
                 title="Notifications"
             >
                 <Bell size={24} />
-                {unreadCount > 0 && (
+                {counts.unread > 0 && (
                     <motion.span
                         initial={{ scale: 0 }}
                         animate={{ scale: 1 }}
                         className="absolute top-1 right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full"
                     >
-                        {unreadCount > 99 ? '99+' : unreadCount}
+                        {counts.unread > 99 ? '99+' : counts.unread}
                     </motion.span>
                 )}
             </button>
@@ -218,7 +216,7 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
                             </div>
                         ) : (
                             <div className="divide-y divide-gray-200">
-                                {notifications.map((notification: any, index: number) => (
+                                {notifications.map((notification, index) => (
                                     <motion.div
                                         key={notification.id}
                                         initial={{ opacity: 0, x: -10 }}

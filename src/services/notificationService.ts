@@ -229,9 +229,11 @@ export const notificationService = {
                 .eq('recipient_id', userId)
                 .order('created_at', { ascending: false });
 
-            if (options?.status) {
-                query = query.eq('status', options.status);
-            }
+            // Note: status filtering skipped if column doesn't exist yet
+            // This will be enabled once migration is applied
+            // if (options?.status) {
+            //     query = query.eq('status', options.status);
+            // }
 
             if (options?.limit) {
                 query = query.limit(options.limit);
@@ -248,23 +250,27 @@ export const notificationService = {
                 return [];
             }
 
-            return data.map(n => ({
-                id: n.id,
-                schoolId: n.school_id,
-                recipientId: n.recipient_id,
-                recipientRole: n.recipient_role,
-                notificationType: n.notification_type,
-                title: n.title,
-                message: n.message,
-                priority: n.priority,
-                status: n.status,
-                actionUrl: n.action_url,
-                relatedStudentId: n.related_student_id,
-                relatedAlertId: n.related_alert_id,
-                createdAt: n.created_at,
-                readAt: n.read_at,
-                archivedAt: n.archived_at
-            }));
+            // If status column exists, filter by it; otherwise return all
+            const unreadOnly = options?.status === 'unread';
+            return data
+                .filter(n => !unreadOnly || n.status !== 'archived' && n.status !== 'read')
+                .map(n => ({
+                    id: n.id,
+                    schoolId: n.school_id,
+                    recipientId: n.recipient_id,
+                    recipientRole: n.recipient_role,
+                    notificationType: n.notification_type,
+                    title: n.title,
+                    message: n.message,
+                    priority: n.priority,
+                    status: n.status || 'unread',
+                    actionUrl: n.action_url,
+                    relatedStudentId: n.related_student_id,
+                    relatedAlertId: n.related_alert_id,
+                    createdAt: n.created_at,
+                    readAt: n.read_at,
+                    archivedAt: n.archived_at
+                }));
         } catch (error) {
             console.error('[NOTIFICATION] Error fetching notifications:', error);
             return [];
@@ -279,7 +285,7 @@ export const notificationService = {
             const { error } = await supabase
                 .from('notifications')
                 .update({
-                    status: 'read',
+                    // status: 'read', // Will use read_at instead
                     read_at: new Date().toISOString()
                 })
                 .eq('id', notificationId);
@@ -305,7 +311,7 @@ export const notificationService = {
             const { error } = await supabase
                 .from('notifications')
                 .update({
-                    status: 'archived',
+                    // status: 'archived', // Will use archived_at instead
                     archived_at: new Date().toISOString()
                 })
                 .eq('id', notificationId);
@@ -331,30 +337,25 @@ export const notificationService = {
         userId: string
     ): Promise<{ unread: number; total: number; archived: number }> {
         try {
-            const { count: unreadCount } = await supabase
+            // Fetch all notifications without status filtering
+            const { count: totalCount, data: notifications } = await supabase
                 .from('notifications')
                 .select('*', { count: 'exact' })
                 .eq('school_id', schoolId)
-                .eq('recipient_id', userId)
-                .eq('status', 'unread');
+                .eq('recipient_id', userId);
 
-            const { count: totalCount } = await supabase
-                .from('notifications')
-                .select('*', { count: 'exact' })
-                .eq('school_id', schoolId)
-                .eq('recipient_id', userId)
-                .neq('status', 'archived');
+            // Count unread/total locally if status column exists
+            let unreadCount = 0;
+            let archivedCount = 0;
 
-            const { count: archivedCount } = await supabase
-                .from('notifications')
-                .select('*', { count: 'exact' })
-                .eq('school_id', schoolId)
-                .eq('recipient_id', userId)
-                .eq('status', 'archived');
+            if (notifications && Array.isArray(notifications)) {
+                unreadCount = notifications.filter(n => !n.read_at).length;
+                archivedCount = notifications.filter(n => n.archived_at).length;
+            }
 
             return {
                 unread: unreadCount || 0,
-                total: totalCount || 0,
+                total: (totalCount || 0) - archivedCount,
                 archived: archivedCount || 0
             };
         } catch (error) {
@@ -370,7 +371,7 @@ export const notificationService = {
     /**
      * Queue email notification (placeholder - implement with actual email service)
      */
-    private async queueEmailNotification(
+    async queueEmailNotification(
         userId: string,
         title: string,
         message: string,
@@ -383,7 +384,7 @@ export const notificationService = {
     /**
      * Queue SMS notification (placeholder - implement with actual SMS service)
      */
-    private async queueSmsNotification(
+    async queueSmsNotification(
         userId: string,
         message: string,
         notificationId: string

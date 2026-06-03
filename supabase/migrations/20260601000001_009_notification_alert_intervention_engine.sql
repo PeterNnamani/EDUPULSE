@@ -36,11 +36,22 @@
 -- ============================================================================
 -- NOTIFICATIONS TABLE
 -- ============================================================================
+
+-- First, drop old notification infrastructure if it exists (from core schema migration 001)
+DROP POLICY IF EXISTS "Notifications are viewable" ON notifications;
+DROP POLICY IF EXISTS "Notifications are insertable" ON notifications;
+DROP POLICY IF EXISTS "Users can read own notifications" ON notifications;
+DROP POLICY IF EXISTS "Service can insert notifications" ON notifications;
+
+-- Drop old notifications table to allow schema change
+DROP TABLE IF EXISTS notifications CASCADE;
+
+-- Create new notifications table with proper schema
 CREATE TABLE IF NOT EXISTS notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
   recipient_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  recipient_role TEXT NOT NULL CHECK (recipient_role IN ('admin', 'principal', 'teacher', 'counselor', 'finance', 'parent')),
+  recipient_role TEXT NOT NULL CHECK (recipient_role IN ('admin', 'principal', 'teacher', 'counselor', 'finance', 'parent', 'student')),
   notification_type TEXT NOT NULL CHECK (notification_type IN (
     'attendance_alert',
     'academic_alert',
@@ -64,14 +75,14 @@ CREATE TABLE IF NOT EXISTS notifications (
   delivery_channels TEXT[] DEFAULT ARRAY['in_app'],
   created_at TIMESTAMPTZ DEFAULT now(),
   read_at TIMESTAMPTZ,
-  archived_at TIMESTAMPTZ,
-  UNIQUE(school_id, recipient_id, related_alert_id)
+  archived_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_notifications_school_recipient ON notifications(school_id, recipient_id);
-CREATE INDEX idx_notifications_status ON notifications(school_id, status);
-CREATE INDEX idx_notifications_created ON notifications(school_id, created_at DESC);
-CREATE INDEX idx_notifications_priority ON notifications(school_id, priority);
+CREATE INDEX IF NOT EXISTS idx_notifications_school_recipient ON notifications(school_id, recipient_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_status ON notifications(school_id, status);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(school_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_priority ON notifications(school_id, priority);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_role ON notifications(school_id, recipient_role);
 
 
 -- ============================================================================
@@ -429,6 +440,11 @@ CREATE INDEX idx_audit_log_entity ON notification_audit_log(school_id, affected_
 -- Notifications RLS
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
+-- Drop old policies if they exist
+DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
+DROP POLICY IF EXISTS "System can insert notifications" ON notifications;
+DROP POLICY IF EXISTS "Users can update own notifications" ON notifications;
+
 CREATE POLICY "Users can view own notifications"
   ON notifications
   FOR SELECT
@@ -447,6 +463,9 @@ CREATE POLICY "Users can update own notifications"
 
 -- Notification Preferences RLS
 ALTER TABLE notification_preferences ENABLE ROW LEVEL SECURITY;
+
+-- Drop old preferences policies if they exist
+DROP POLICY IF EXISTS "Users can manage own preferences" ON notification_preferences;
 
 CREATE POLICY "Users can manage own preferences"
   ON notification_preferences
