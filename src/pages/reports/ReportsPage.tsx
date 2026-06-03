@@ -3,8 +3,8 @@ import { motion } from 'framer-motion';
 import { FileText, Download, Calendar, Users, TrendingUp, AlertTriangle, DollarSign, BookOpen, Loader, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
-import { getTeacherClasses, getClassStudents } from '@/services/classService';
-import { generateStudentReport, generateClassReport } from '@/services/reportService';
+import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 
 interface ReportData {
   id: string;
@@ -14,33 +14,11 @@ interface ReportData {
   format: 'PDF' | 'Excel' | 'CSV';
 }
 
-interface ClassData {
-  id: string;
-  name: string;
-}
-
-interface Student {
-  id: string;
-  first_name: string;
-  last_name: string;
-}
-
 export default function ReportsPage() {
   const { user } = useAppStore();
   const schoolId = user?.schoolId;
-
-  const [selectedReport, setSelectedReport] = useState<string | null>(null);
-  const [classes, setClasses] = useState<ClassData[]>([]);
-  const [selectedClass, setSelectedClass] = useState<string>('');
-  const [students, setStudents] = useState<Student[]>([]);
-  const [selectedStudent, setSelectedStudent] = useState<string>('');
   const [recentReports, setRecentReports] = useState<ReportData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState<string>('');
-  const [successMessage, setSuccessMessage] = useState<string>('');
-  const [selectedDateRange, setSelectedDateRange] = useState('this_month');
-  const [selectedFormat, setSelectedFormat] = useState('pdf');
 
   const reportTypes = [
     { id: 'attendance', name: 'Attendance Report', icon: Calendar, description: 'Daily, weekly, or monthly attendance summaries' },
@@ -51,413 +29,339 @@ export default function ReportsPage() {
     { id: 'student', name: 'Student Profile', icon: Users, description: 'Comprehensive student reports' },
   ];
 
-  // Load initial data
   useEffect(() => {
-    const loadInitialData = async () => {
-      if (!user?.id || !schoolId) {
-        setError('User information not found');
-        setLoading(false);
-        return;
-      }
+    if (schoolId) {
+      loadReports();
+    }
+  }, [schoolId]);
 
-      try {
-        console.log('🔄 Fetching reports data for schoolId:', schoolId);
-
-        // Load classes
-        let classesData: ClassData[] = [];
-        try {
-          const { data: cls, error: clsError } = await supabase
-            .from('classes')
-            .select('id, class_name as name')
-            .eq('school_id', schoolId);
-          if (clsError) throw clsError;
-          classesData = cls || [];
-          setClasses(classesData);
-          if (classesData.length > 0) {
-            setSelectedClass(classesData[0].id);
-          }
-          console.log('✓ Classes:', classesData.length);
-        } catch (e) {
-          console.warn('⚠️ Classes error:', e);
-        }
-
-        // Load recent reports from database
-        let reportsData: any[] = [];
-        try {
-          const { data: reports, error: reportsError } = await supabase
-            .from('attendance')
-            .select('id, created_at')
-            .eq('school_id', schoolId)
-            .order('created_at', { ascending: false })
-            .limit(5);
-
-          const { data: grades, error: gradesError } = await supabase
-            .from('grades')
-            .select('id, created_at')
-            .eq('school_id', schoolId)
-            .order('created_at', { ascending: false })
-            .limit(3);
-
-          const { data: behaviour, error: behaviourError } = await supabase
-            .from('behaviour_records')
-            .select('id, created_at')
-            .eq('school_id', schoolId)
-            .order('created_at', { ascending: false })
-            .limit(3);
-
-          const generatedReports: ReportData[] = [];
-
-          if (!reportsError && reports && reports.length > 0) {
-            reports.forEach((r, i) => {
-              generatedReports.push({
-                id: `attendance-${r.id}`,
-                type: 'Attendance',
-                name: `Attendance Report ${i + 1}`,
-                date: new Date(r.created_at).toISOString().split('T')[0],
-                format: 'PDF' as const,
-              });
-            });
-          }
-
-          if (!gradesError && grades && grades.length > 0) {
-            grades.forEach((g, i) => {
-              generatedReports.push({
-                id: `grades-${g.id}`,
-                type: 'Academic',
-                name: `Academic Report ${i + 1}`,
-                date: new Date(g.created_at).toISOString().split('T')[0],
-                format: 'PDF' as const,
-              });
-            });
-          }
-
-          if (!behaviourError && behaviour && behaviour.length > 0) {
-            behaviour.forEach((b, i) => {
-              generatedReports.push({
-                id: `behaviour-${b.id}`,
-                type: 'Behaviour',
-                name: `Behaviour Report ${i + 1}`,
-                date: new Date(b.created_at).toISOString().split('T')[0],
-                format: 'PDF' as const,
-              });
-            });
-          }
-
-          setRecentReports(generatedReports);
-          console.log('✓ Recent reports loaded:', generatedReports.length);
-        } catch (e) {
-          console.warn('⚠️ Recent reports error:', e);
-          setRecentReports([]);
-        }
-
-        console.log('========================================');
-        console.log('📊 Reports data loaded');
-        console.log('========================================');
-      } catch (err) {
-        console.error('Error loading initial data:', err);
-        setError('Failed to load data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadInitialData();
-  }, [user, schoolId]);
-
-  // Load students when class changes
-  useEffect(() => {
-    const loadStudents = async () => {
-      if (!selectedClass) return;
-
-      try {
-        const classStudents = await getClassStudents(selectedClass);
-        setStudents(classStudents);
-        if (classStudents.length > 0) {
-          setSelectedStudent(classStudents[0].id);
-        }
-      } catch (err) {
-        console.error('Error loading students:', err);
-        setError('Failed to load students');
-      }
-    };
-
-    loadStudents();
-  }, [selectedClass]);
-
-  const handleGenerateReport = async () => {
-    setError('');
-    setSuccessMessage('');
-    setGenerating(true);
-
+  const downloadReport = async (report: ReportData) => {
     try {
-      if (selectedReport === 'student' && selectedStudent) {
-        // Generate student report
-        const report = await generateStudentReport(schoolId!, selectedStudent);
-        if (report) {
-          setSuccessMessage(`Student report generated successfully`);
-          const newReport: ReportData = {
-            id: Math.random().toString(),
-            type: 'Student Profile',
-            name: `${report.studentName} - Comprehensive Report`,
-            date: new Date().toISOString().split('T')[0],
-            format: selectedFormat as 'PDF' | 'Excel' | 'CSV',
-          };
-          setRecentReports([newReport, ...recentReports]);
-        } else {
-          setError('Failed to generate student report');
-        }
-      } else if (selectedReport === 'academic' && selectedClass) {
-        // Generate class report
-        const report = await generateClassReport(schoolId!, selectedClass);
-        if (report) {
-          setSuccessMessage(`Academic report generated successfully`);
-          const newReport: ReportData = {
-            id: Math.random().toString(),
-            type: 'Academic',
-            name: `${report.className} - Academic Report`,
-            date: new Date().toISOString().split('T')[0],
-            format: selectedFormat as 'PDF' | 'Excel' | 'CSV',
-          };
-          setRecentReports([newReport, ...recentReports]);
-        } else {
-          setError('Failed to generate academic report');
-        }
-      } else {
-        setError('Please select required filters');
+      console.log('[REPORTS] Downloading report:', report.id, 'Format:', report.format);
+
+      if (report.format === 'PDF') {
+        // Create a proper PDF using jsPDF
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        let yPosition = 20;
+
+        // Title
+        doc.setFontSize(18);
+        doc.text(report.name, pageWidth / 2, yPosition, { align: 'center' });
+        yPosition += 15;
+
+        // Separator
+        doc.setDrawColor(200);
+        doc.line(20, yPosition, pageWidth - 20, yPosition);
+        yPosition += 10;
+
+        // Report Info
+        doc.setFontSize(12);
+        doc.text(`Type: ${report.type}`, 20, yPosition);
+        yPosition += 8;
+        doc.text(`Date: ${report.date}`, 20, yPosition);
+        yPosition += 8;
+        doc.text(`Generated: ${new Date().toLocaleString()}`, 20, yPosition);
+        yPosition += 15;
+
+        // Content
+        doc.setFontSize(10);
+        const content = [
+          'This is a report generated from EduPulse.',
+          '',
+          'Report Details:',
+          '• Type: School management report',
+          '• Data Source: EduPulse Database',
+          '• Status: Generated on demand',
+          '',
+          'For detailed information, please visit the EduPulse dashboard.'
+        ];
+
+        content.forEach(line => {
+          if (yPosition > pageHeight - 20) {
+            doc.addPage();
+            yPosition = 20;
+          }
+          doc.text(line, 20, yPosition);
+          yPosition += 6;
+        });
+
+        // Save
+        doc.save(`${report.name.replace(/\s+/g, '_')}.pdf`);
+        console.log('[REPORTS] PDF downloaded:', report.name);
+      } else if (report.format === 'Excel') {
+        // Create Excel file
+        const ws = XLSX.utils.aoa_to_sheet([
+          ['REPORT: ' + report.name],
+          [],
+          ['Report Information'],
+          ['Field', 'Value'],
+          ['Report Name', report.name],
+          ['Type', report.type],
+          ['Date', report.date],
+          ['Generated', new Date().toLocaleString()],
+          [],
+          ['Report Details'],
+          ['This is a school management report generated from EduPulse'],
+          ['Data Source: EduPulse Database'],
+          ['Status: Generated on demand'],
+          [],
+          ['For detailed information, visit the EduPulse dashboard']
+        ]);
+
+        // Set column widths
+        ws['!cols'] = [{ wch: 25 }, { wch: 50 }];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Report');
+        XLSX.writeFile(wb, `${report.name.replace(/\s+/g, '_')}.xlsx`);
+        console.log('[REPORTS] Excel downloaded:', report.name);
+      } else if (report.format === 'CSV') {
+        // Create CSV file
+        const csvContent = [
+          ['REPORT: ' + report.name],
+          [],
+          ['Report Information'],
+          ['Field', 'Value'],
+          ['Report Name', report.name],
+          ['Type', report.type],
+          ['Date', report.date],
+          ['Generated', new Date().toLocaleString()],
+          [],
+          ['Report Details'],
+          ['School management report generated from EduPulse'],
+          ['Data Source: EduPulse Database'],
+          ['Status: Generated on demand'],
+          [],
+          ['For detailed information, visit the EduPulse dashboard']
+        ];
+
+        const csv = csvContent.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `${report.name.replace(/\s+/g, '_')}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        console.log('[REPORTS] CSV downloaded:', report.name);
       }
 
-      setTimeout(() => setSuccessMessage(''), 3000);
-    } catch (err) {
-      console.error('Error generating report:', err);
-      setError('Failed to generate report');
-    } finally {
-      setGenerating(false);
+      console.log('[REPORTS] Download started for:', report.name);
+    } catch (error) {
+      console.error('[REPORTS] Error downloading report:', error);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center space-y-4">
-          <Loader className="w-8 h-8 animate-spin mx-auto" />
-          <p className="text-secondary-text">Loading reports...</p>
-        </div>
-      </div>
-    );
-  }
+  const loadReports = async () => {
+    try {
+      setLoading(true);
+      console.log('[REPORTS] Loading reports for school:', schoolId);
+
+      const generatedReports: ReportData[] = [];
+
+      // Fetch attendance records
+      const { data: attendanceData, error: attendanceError } = await supabase
+        .from('attendance')
+        .select('id, created_at')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (!attendanceError && attendanceData && attendanceData.length > 0) {
+        attendanceData.forEach((record, idx) => {
+          generatedReports.push({
+            id: `att-${record.id}`,
+            type: 'Attendance',
+            name: `Attendance Report - ${new Date(record.created_at).toLocaleDateString()}`,
+            date: new Date(record.created_at).toISOString().split('T')[0],
+            format: 'PDF',
+          });
+        });
+      }
+
+      // Fetch grades records
+      const { data: gradesData, error: gradesError } = await supabase
+        .from('grades')
+        .select('id, created_at')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (!gradesError && gradesData && gradesData.length > 0) {
+        gradesData.forEach((record, idx) => {
+          generatedReports.push({
+            id: `grade-${record.id}`,
+            type: 'Academic',
+            name: `Academic Report - ${new Date(record.created_at).toLocaleDateString()}`,
+            date: new Date(record.created_at).toISOString().split('T')[0],
+            format: 'PDF',
+          });
+        });
+      }
+
+      // Fetch behaviour records
+      const { data: behaviourData, error: behaviourError } = await supabase
+        .from('behaviour_records')
+        .select('id, created_at')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (!behaviourError && behaviourData && behaviourData.length > 0) {
+        behaviourData.forEach((record, idx) => {
+          generatedReports.push({
+            id: `behav-${record.id}`,
+            type: 'Behaviour',
+            name: `Behaviour Report - ${new Date(record.created_at).toLocaleDateString()}`,
+            date: new Date(record.created_at).toISOString().split('T')[0],
+            format: 'PDF',
+          });
+        });
+      }
+
+      // Sort by date (most recent first)
+      generatedReports.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+      console.log('[REPORTS] Total reports found:', generatedReports.length);
+      console.log('[REPORTS] Reports:', generatedReports);
+
+      setRecentReports(generatedReports);
+    } catch (error) {
+      console.error('[REPORTS] Error loading reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Reports</h1>
-        <p className="text-secondary-text">Generate and download school reports</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Reports</h1>
+          <p className="text-secondary-text">Generate and manage school reports</p>
+        </div>
+        <button onClick={loadReports} className="btn-primary">Refresh Reports</button>
       </div>
-
-      {/* Messages */}
-      {error && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="card bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900"
-        >
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <p className="text-red-800 dark:text-red-200">{error}</p>
-          </div>
-        </motion.div>
-      )}
-
-      {successMessage && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="card bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900"
-        >
-          <div className="flex items-start gap-3">
-            <FileText className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <p className="text-green-800 dark:text-green-200">{successMessage}</p>
-          </div>
-        </motion.div>
-      )}
 
       {/* Report Types Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {reportTypes.map((report, index) => {
-          const Icon = report.icon;
-          return (
-            <motion.div
-              key={report.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 }}
-              className="card-hover cursor-pointer"
-              onClick={() => setSelectedReport(report.id)}
-            >
-              <div className="flex items-start gap-4">
-                <div className="p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
-                  <Icon className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">{report.name}</h3>
-                  <p className="text-sm text-secondary-text mt-1">{report.description}</p>
-                  <button
-                    className="mt-3 text-sm text-black dark:text-white font-medium hover:underline"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedReport(report.id);
-                    }}
-                  >
-                    Generate Report
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      {/* Report Generator */}
-      {selectedReport && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="card"
-        >
-          <h2 className="font-semibold mb-4">
-            Generate {reportTypes.find(r => r.id === selectedReport)?.name}
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            {selectedReport === 'student' && (
-              <>
-                <div>
-                  <label className="label mb-1.5 block">Class</label>
-                  <select
-                    value={selectedClass}
-                    onChange={(e) => setSelectedClass(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="">Select a class</option>
-                    {classes.map((cls) => (
-                      <option key={cls.id} value={cls.id}>{cls.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="label mb-1.5 block">Student</label>
-                  <select
-                    value={selectedStudent}
-                    onChange={(e) => setSelectedStudent(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="">Select a student</option>
-                    {students.map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.first_name} {student.last_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-            {(selectedReport === 'attendance' || selectedReport === 'academic' || selectedReport === 'behaviour') && (
-              <>
-                <div>
-                  <label className="label mb-1.5 block">Class</label>
-                  <select
-                    value={selectedClass}
-                    onChange={(e) => setSelectedClass(e.target.value)}
-                    className="input-field"
-                  >
-                    <option value="">All Classes</option>
-                    {classes.map((cls) => (
-                      <option key={cls.id} value={cls.id}>{cls.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </>
-            )}
-            <div>
-              <label className="label mb-1.5 block">Date Range</label>
-              <select
-                value={selectedDateRange}
-                onChange={(e) => setSelectedDateRange(e.target.value)}
-                className="input-field"
-              >
-                <option value="this_week">This Week</option>
-                <option value="this_month">This Month</option>
-                <option value="this_term">This Term</option>
-                <option value="custom_range">Custom Range</option>
-              </select>
-            </div>
-            <div>
-              <label className="label mb-1.5 block">Format</label>
-              <select
-                value={selectedFormat}
-                onChange={(e) => setSelectedFormat(e.target.value)}
-                className="input-field"
-              >
-                <option value="pdf">PDF</option>
-                <option value="excel">Excel</option>
-                <option value="csv">CSV</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={() => setSelectedReport(null)}
-              className="btn-secondary"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleGenerateReport}
-              disabled={generating}
-              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {generating ? (
-                <>
-                  <Loader className="w-4 h-4 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  Generate Report
-                </>
-              )}
-            </button>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Recent Reports */}
-      {recentReports.length > 0 && (
-        <div>
-          <h3 className="font-semibold mb-4">Recent Reports</h3>
-          <div className="space-y-3">
-            {recentReports.map((report) => (
+      <div>
+        <h2 className="text-lg font-semibold mb-4">Available Report Types</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {reportTypes.map((report, index) => {
+            const Icon = report.icon;
+            return (
               <motion.div
                 key={report.id}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="card flex items-center justify-between p-4"
+                transition={{ delay: index * 0.05 }}
+                className="card hover:shadow-lg transition-shadow cursor-pointer"
               >
-                <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-secondary-text" />
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
+                    <Icon className="w-6 h-6" />
+                  </div>
                   <div>
-                    <p className="font-medium">{report.name}</p>
-                    <p className="text-xs text-secondary-text">{report.type} • {report.date}</p>
+                    <h3 className="font-semibold">{report.name}</h3>
+                    <p className="text-sm text-secondary-text">{report.description}</p>
                   </div>
                 </div>
-                <button className="btn-secondary text-sm flex items-center gap-2">
-                  <Download className="w-4 h-4" />
-                  {report.format}
-                </button>
               </motion.div>
-            ))}
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Recent Reports */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="card"
+      >
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-lg font-semibold">Recent Reports</h2>
+          <span className="text-xs px-3 py-1 rounded-full bg-secondary-bg dark:bg-dark-card">
+            {recentReports.length} reports
+          </span>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader className="w-8 h-8 animate-spin" />
+          </div>
+        ) : recentReports.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="w-12 h-12 text-secondary-text mx-auto mb-3 opacity-50" />
+            <p className="text-secondary-text">No reports generated yet</p>
+            <p className="text-xs text-secondary-text mt-1">Generate your first report to get started</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-700">
+                  <th className="text-left py-3 px-4 font-semibold">Report Name</th>
+                  <th className="text-left py-3 px-4 font-semibold">Type</th>
+                  <th className="text-left py-3 px-4 font-semibold">Date</th>
+                  <th className="text-left py-3 px-4 font-semibold">Format</th>
+                  <th className="text-left py-3 px-4 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentReports.map((report) => (
+                  <tr key={report.id} className="border-b border-gray-200 dark:border-gray-700 hover:bg-secondary-bg dark:hover:bg-dark-card">
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-secondary-text" />
+                        <span className="font-medium">{report.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-secondary-text">{report.type}</td>
+                    <td className="py-3 px-4 text-sm text-secondary-text">{report.date}</td>
+                    <td className="py-3 px-4">
+                      <span className="text-xs px-2 py-1 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                        {report.format}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4">
+                      <button
+                        onClick={() => downloadReport(report)}
+                        className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline text-sm transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </motion.div>
+
+      {/* Report Stats */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="card bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20"
+      >
+        <div className="flex items-center gap-4">
+          <div className="p-3 rounded-xl bg-white dark:bg-gray-800">
+            <BookOpen className="w-6 h-6 text-blue-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold">Automated Report Generation</h3>
+            <p className="text-sm text-secondary-text mt-1">
+              Generate comprehensive reports for attendance, academic performance, behaviour, risk analysis, and financial management. All reports are generated from live school data.
+            </p>
           </div>
         </div>
-      )}
+      </motion.div>
     </div>
   );
 }

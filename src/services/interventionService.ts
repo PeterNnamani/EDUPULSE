@@ -136,7 +136,7 @@ export const interventionService = {
     /**
      * Get intervention details for specific alert type
      */
-    private getInterventionDetails(
+    getInterventionDetails(
         alertType: AlertType,
         riskLevel: 'low' | 'medium' | 'high' | 'critical',
         studentName: string
@@ -254,7 +254,7 @@ export const interventionService = {
     /**
      * Get expected outcome for alert type
      */
-    private getExpectedOutcome(alertType: AlertType): string {
+    getExpectedOutcome(alertType: AlertType): string {
         const outcomes: Record<AlertType, string> = {
             attendance: 'Student achieves 90% attendance and maintains consistent school presence',
             academic_decline: 'Student stabilizes grades and shows improvement in weak subjects',
@@ -578,7 +578,7 @@ export const interventionService = {
     // HELPER METHODS
     // ============================================================================
 
-    private mapCaseData(data: any): InterventionCase {
+    mapCaseData(data: any): InterventionCase {
         return {
             id: data.id,
             schoolId: data.school_id,
@@ -602,7 +602,7 @@ export const interventionService = {
         };
     },
 
-    private mapActivityData(data: any): InterventionActivity {
+    mapActivityData(data: any): InterventionActivity {
         return {
             id: data.id,
             schoolId: data.school_id,
@@ -625,7 +625,7 @@ export const interventionService = {
         };
     },
 
-    private calculateSuccessRate(outcome: any): number {
+    calculateSuccessRate(outcome: any): number {
         let successIndicators = 0;
         const totalIndicators = 5;
 
@@ -640,7 +640,7 @@ export const interventionService = {
         return Math.round((successIndicators / totalIndicators) * 100);
     },
 
-    private async notifyCounselor(
+    async notifyCounselor(
         schoolId: string,
         counselorId: string,
         studentName: string,
