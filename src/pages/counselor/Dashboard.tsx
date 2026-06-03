@@ -130,11 +130,10 @@ export default function CounselorDashboard() {
             {openCases.map((caseItem) => (
               <div
                 key={caseItem.id}
-                className={`p-4 rounded-xl border cursor-pointer transition-all ${
-                  selectedCase === caseItem.id.toString()
+                className={`p-4 rounded-xl border cursor-pointer transition-all ${selectedCase === caseItem.id.toString()
                     ? 'border-black dark:border-white bg-secondary-bg dark:bg-dark-card'
                     : 'border-border dark:border-gray-800 hover:border-gray-400 dark:hover:border-gray-600'
-                }`}
+                  }`}
                 onClick={() => setSelectedCase(caseItem.id.toString())}
               >
                 <div className="flex items-start justify-between">
@@ -148,11 +147,10 @@ export default function CounselorDashboard() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className={`badge ${
-                      caseItem.risk === 'critical' ? 'badge-danger' :
-                      caseItem.risk === 'high' ? 'badge-warning' :
-                      'badge-info'
-                    }`}>
+                    <span className={`badge ${caseItem.risk === 'critical' ? 'badge-danger' :
+                        caseItem.risk === 'high' ? 'badge-warning' :
+                          'badge-info'
+                      }`}>
                       {caseItem.risk}
                     </span>
                   </div>
@@ -217,11 +215,10 @@ export default function CounselorDashboard() {
                   <td className="px-4 py-3 font-medium">{item.student}</td>
                   <td className="px-4 py-3 text-secondary-text">{item.intervention}</td>
                   <td className="px-4 py-3">
-                    <span className={`badge ${
-                      item.status === 'completed' ? 'badge-success' :
-                      item.status === 'ongoing' ? 'badge-warning' :
-                      'badge-info'
-                    }`}>
+                    <span className={`badge ${item.status === 'completed' ? 'badge-success' :
+                        item.status === 'ongoing' ? 'badge-warning' :
+                          'badge-info'
+                      }`}>
                       {item.status}
                     </span>
                   </td>
