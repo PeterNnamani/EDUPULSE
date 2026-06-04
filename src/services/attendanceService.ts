@@ -145,6 +145,19 @@ export async function recordClassAttendance(
         }
 
         console.log('[CLASS_ATTENDANCE_RECORDED]', classId, 'on', date, 'for', records.length, 'students');
+
+        const { dispatchAttendanceMarked } = await import('@/services/notificationDispatchService');
+        void dispatchAttendanceMarked(
+            schoolId,
+            classId,
+            date,
+            attendanceData.map((r) => ({ studentId: r.studentId, status: r.status }))
+        );
+
+        const { scheduleRiskRecalculation } = await import('@/services/riskRecalculate');
+        const uniqueStudents = [...new Set(attendanceData.map((r) => r.studentId))];
+        uniqueStudents.forEach((sid) => scheduleRiskRecalculation(schoolId, sid));
+
         return { success: true, recorded: records.length };
     } catch (error) {
         console.error('Record class attendance error:', error);

@@ -114,6 +114,23 @@ export async function recordGrade(
             }
 
             console.log('[GRADE_RECORDED]', studentId, assessmentType, 'score', score);
+
+            const { data: subject } = await supabase
+                .from('subjects')
+                .select('name')
+                .eq('id', subjectId)
+                .maybeSingle();
+            const { dispatchGradeRecorded } = await import('@/services/notificationDispatchService');
+            void dispatchGradeRecorded(
+                schoolId,
+                studentId,
+                subject?.name ?? 'Subject',
+                score
+            );
+
+            const { scheduleRiskRecalculation } = await import('@/services/riskRecalculate');
+            scheduleRiskRecalculation(schoolId, studentId);
+
             return { success: true };
         }
     } catch (error) {

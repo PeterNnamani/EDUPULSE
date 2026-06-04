@@ -12,6 +12,13 @@ export const useSound = () => {
         try {
             const { volume = 1, loop = false } = options;
 
+            if (soundType === 'notification') {
+                import('@/utils/playNotificationSound').then(({ playNotificationSound }) => {
+                    playNotificationSound(volume);
+                });
+                return;
+            }
+
             const soundMap: Record<SoundType, string> = {
                 intro: '/sounds/intro.mp3',
                 notification: '/sounds/notification.mp3',
@@ -23,7 +30,6 @@ export const useSound = () => {
                 return;
             }
 
-            // Create audio element for playback
             const audio = new Audio(audioPath);
             audio.volume = Math.min(Math.max(volume, 0), 1); // Clamp between 0-1
             audio.loop = loop;

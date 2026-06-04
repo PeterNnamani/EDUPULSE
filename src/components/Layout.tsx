@@ -24,7 +24,7 @@ import { useAppStore } from '@/store';
 import { useState, useEffect } from 'react';
 import { ChatBot, WelcomeMessage } from '@/components/Chatbot';
 import NotificationBell from '@/components/NotificationBell';
-import { useNotificationSound } from '@/hooks/useNotificationSound';
+import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
 
 const adminNavItems = [
   { label: 'Dashboard', path: '/admin', icon: LayoutDashboard },
@@ -33,6 +33,8 @@ const adminNavItems = [
   { label: 'Classes', path: '/admin/classes', icon: Building },
   { label: 'Subjects', path: '/admin/subjects', icon: BookOpen },
   { label: 'Subscriptions', path: '/admin/subscriptions', icon: DollarSign },
+  { label: 'Academic calendar', path: '/admin/academic-calendar', icon: CalendarDays },
+  { label: 'Promotion', path: '/admin/academic-lifecycle', icon: GraduationCap },
 ];
 
 const teacherNavItems = [
@@ -46,6 +48,10 @@ const teacherNavItems = [
 
 const principalNavItems = [
   { label: 'Dashboard', path: '/principal', icon: LayoutDashboard },
+  { label: 'Students', path: '/principal/students', icon: Users },
+  { label: 'Staff', path: '/principal/staff', icon: GraduationCap },
+  { label: 'Attendance', path: '/principal/attendance', icon: CalendarDays },
+  { label: 'Behaviour', path: '/principal/behaviour', icon: BookOpen },
   { label: 'Risk Analysis', path: '/risk', icon: AlertTriangle },
   { label: 'Reports', path: '/reports', icon: FileText },
   { label: 'Settings', path: '/settings', icon: Settings },
@@ -89,10 +95,15 @@ export default function Layout() {
   const [showWelcome, setShowWelcome] = useState(true);
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
 
-  // Activate notification sounds and real-time listening
-  useNotificationSound();
-
   const navItems = user ? roleNavMap[user.role] || [] : [];
+
+  useEffect(() => {
+    if (isAuthenticated && user?.role === 'admin' && user.schoolId) {
+      import('@/services/subscriptionService').then(({ runSubscriptionDeadlineChecks }) => {
+        void runSubscriptionDeadlineChecks(user.schoolId!);
+      });
+    }
+  }, [isAuthenticated, user?.role, user?.schoolId]);
 
   // Show welcome message only once after login
   useEffect(() => {
@@ -105,11 +116,13 @@ export default function Layout() {
   const handleLogout = () => {
     setHasShownWelcome(false);
     setShowWelcome(false);
+    sessionStorage.removeItem('edupulse-notification-session');
     logout();
     navigate('/');
   };
 
   return (
+    <InAppNotificationProvider>
     <div className={`h-screen flex flex-col bg-white dark:bg-black ${darkMode ? 'dark' : ''}`}>
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-dark-bg border-b border-border dark:border-gray-800 z-50 px-4">
@@ -276,5 +289,6 @@ export default function Layout() {
         onDismiss={() => setShowWelcome(false)}
       />
     </div>
+    </InAppNotificationProvider>
   );
 }

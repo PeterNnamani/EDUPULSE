@@ -125,17 +125,19 @@ export default function ParentDashboard() {
         }
 
         const attendanceStats = {
-          present: attendanceData?.filter((a: any) => a.status === 'present').length || 0,
-          absent: attendanceData?.filter((a: any) => a.status === 'absent').length || 0,
-          late: attendanceData?.filter((a: any) => a.status === 'late').length || 0,
+          present: attendanceData?.filter((a: { status: string }) => a.status === 'present').length || 0,
+          absent: attendanceData?.filter((a: { status: string }) => a.status === 'absent').length || 0,
+          late: attendanceData?.filter((a: { status: string }) => a.status === 'late').length || 0,
         };
         const totalAttendance = attendanceStats.present + attendanceStats.absent + attendanceStats.late;
-        const attendancePercentage = totalAttendance > 0 ? Math.round((attendanceStats.present / totalAttendance) * 100) : 0;
+        const attended = attendanceStats.present + attendanceStats.late;
+        const attendancePercentage =
+          totalAttendance > 0 ? Math.round((attended / totalAttendance) * 100) : 0;
 
         // Fetch grades data
         const { data: gradesData, error: gradesError } = await supabase
           .from('grades')
-          .select('score')
+          .select('score, max_score')
           .eq('student_id', selectedParentChildId)
           .eq('school_id', user.schoolId);
 
@@ -143,9 +145,15 @@ export default function ParentDashboard() {
           console.error('[PARENT_DASHBOARD] Error fetching grades:', gradesError);
         }
 
-        const averageGrade = gradesData && gradesData.length > 0
-          ? Math.round(gradesData.reduce((sum: number, g: any) => sum + (g.score || 0), 0) / gradesData.length)
-          : 0;
+        const averageGrade =
+          gradesData && gradesData.length > 0
+            ? Math.round(
+                gradesData.reduce((sum: number, g: { score?: number; max_score?: number }) => {
+                  const max = g.max_score && g.max_score > 0 ? g.max_score : 100;
+                  return sum + ((g.score || 0) / max) * 100;
+                }, 0) / gradesData.length
+              )
+            : 0;
 
         // Fetch assignments data
         const { data: assignmentData, error: assignmentError } = await supabase
@@ -180,20 +188,43 @@ export default function ParentDashboard() {
           demerits: behaviourData?.filter((b: any) => b.behaviour_type === 'demerit' || b.behaviour_type === 'warning').length || 0,
         };
 
-        // Fetch risk assessment
-        const { data: riskData, error: riskError } = await supabase
-          .from('risk_assessments')
-          .select('risk_level')
-          .eq('student_id', selectedParentChildId)
+        const { data: studentRow, error: studentError } = await supabase
+          .from('students')
+          .select('risk_level, class_id')
+          .eq('id', selectedParentChildId)
           .eq('school_id', user.schoolId)
-          .order('assessed_at', { ascending: false })
-          .limit(1);
+          .maybeSingle();
 
-        if (riskError) {
-          console.error('[PARENT_DASHBOARD] Error fetching risk assessment:', riskError);
+        if (studentError) {
+          console.error('[PARENT_DASHBOARD] Error fetching student:', studentError);
         }
 
-        const riskLevel = riskData && riskData.length > 0 ? riskData[0].risk_level : 'low';
+        const riskLevel = studentRow?.risk_level ?? 'low';
+
+        let feeStatus = 'unknown';
+        if (studentRow?.class_id) {
+          const [{ data: classFee }, { data: studentPayments }] = await Promise.all([
+            supabase
+              .from('fees')
+              .select('amount')
+              .eq('school_id', user.schoolId)
+              .eq('class_id', studentRow.class_id)
+              .eq('is_active', true)
+              .maybeSingle(),
+            supabase
+              .from('payments')
+              .select('amount')
+              .eq('school_id', user.schoolId)
+              .eq('student_id', selectedParentChildId)
+              .eq('status', 'completed'),
+          ]);
+          const expected = Number(classFee?.amount ?? 0);
+          const paid = (studentPayments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
+          if (expected <= 0) feeStatus = 'no_fee';
+          else if (paid >= expected) feeStatus = 'paid';
+          else if (paid > 0) feeStatus = 'partial';
+          else feeStatus = 'unpaid';
+        }
 
         // Fetch recent assignments for the dashboard preview
         try {
@@ -213,7 +244,7 @@ export default function ParentDashboard() {
               averageGrade: averageGrade,
               assignments: assignmentStats,
               behaviour: behaviourStats,
-              feeStatus: 'paid',
+              feeStatus,
               riskLevel: riskLevel,
             },
           }));
@@ -465,10 +496,20 @@ export default function ParentDashboard() {
                 <p className="text-xs text-secondary-text mt-1">Demerits</p>
               </div>
               <div className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card text-center">
-                <p className={`text-2xl font-bold ${stats.feeStatus === 'paid' ? 'text-green-600' : 'text-red-600'}`}>
-                  {stats.feeStatus === 'paid' ? '✓' : '!'}
+                <p
+                  className={`text-lg font-bold capitalize ${
+                    stats.feeStatus === 'paid'
+                      ? 'text-green-600'
+                      : stats.feeStatus === 'partial'
+                        ? 'text-yellow-600'
+                        : stats.feeStatus === 'no_fee'
+                          ? 'text-secondary-text'
+                          : 'text-red-600'
+                  }`}
+                >
+                  {stats.feeStatus === 'no_fee' ? 'N/A' : stats.feeStatus}
                 </p>
-                <p className="text-xs text-secondary-text mt-1">Fee Status</p>
+                <p className="text-xs text-secondary-text mt-1">Fee status</p>
               </div>
               <div className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card text-center">
                 <p className="text-2xl font-bold">{stats.attendance.late}</p>

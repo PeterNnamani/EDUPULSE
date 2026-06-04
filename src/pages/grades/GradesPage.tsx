@@ -120,7 +120,7 @@ export default function GradesPage() {
       if (!selectedClass) return;
 
       try {
-        const classStudents = await getClassStudents(selectedClass);
+        const classStudents = await getClassStudents(selectedClass, user?.schoolId);
         setStudents(classStudents);
         setGrades({});
         setSuccessMessage('');

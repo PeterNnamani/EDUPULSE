@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Download, Calendar, Users, TrendingUp, AlertTriangle, DollarSign, BookOpen, Loader, AlertCircle } from 'lucide-react';
+import { FileText, Download, Calendar, Users, TrendingUp, AlertTriangle, DollarSign, BookOpen, Loader } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
+import { fetchPrincipalDashboard } from '@/services/principalDashboardService';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 
@@ -17,8 +18,10 @@ interface ReportData {
 export default function ReportsPage() {
   const { user } = useAppStore();
   const schoolId = user?.schoolId;
+  const isPrincipal = user?.role === 'principal';
   const [recentReports, setRecentReports] = useState<ReportData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [schoolStats, setSchoolStats] = useState<string[]>([]);
 
   const reportTypes = [
     { id: 'attendance', name: 'Attendance Report', icon: Calendar, description: 'Daily, weekly, or monthly attendance summaries' },
@@ -32,8 +35,21 @@ export default function ReportsPage() {
   useEffect(() => {
     if (schoolId) {
       loadReports();
+      if (isPrincipal) {
+        fetchPrincipalDashboard(schoolId).then((d) => {
+          const m = d.metrics;
+          setSchoolStats([
+            `Total students: ${m.totalStudents}`,
+            `Total staff: ${m.totalStaff}`,
+            `Attendance rate (7d): ${m.attendanceRate}%`,
+            `Average grade (30d): ${m.averageGrade}%`,
+            `High-risk students: ${m.highRiskStudents}`,
+            `Open intervention cases: ${m.openCases}`,
+          ]);
+        });
+      }
     }
-  }, [schoolId]);
+  }, [schoolId, isPrincipal]);
 
   const downloadReport = async (report: ReportData) => {
     try {
@@ -68,14 +84,15 @@ export default function ReportsPage() {
         // Content
         doc.setFontSize(10);
         const content = [
-          'This is a report generated from EduPulse.',
+          'EduPulse — School Report',
           '',
-          'Report Details:',
-          '• Type: School management report',
-          '• Data Source: EduPulse Database',
-          '• Status: Generated on demand',
+          `Report: ${report.name}`,
+          `Type: ${report.type}`,
+          `Date: ${report.date}`,
           '',
-          'For detailed information, please visit the EduPulse dashboard.'
+          ...(schoolStats.length ? ['Live school snapshot:', ...schoolStats.map((s) => `• ${s}`), ''] : []),
+          'Data source: EduPulse database (live records)',
+          'Generated on demand for leadership review.',
         ];
 
         content.forEach(line => {
@@ -242,9 +259,15 @@ export default function ReportsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Reports</h1>
-          <p className="text-secondary-text">Generate and manage school reports</p>
+          <p className="text-secondary-text">
+            {isPrincipal
+              ? 'Download leadership summaries built from live school data'
+              : 'Generate and manage school reports'}
+          </p>
         </div>
-        <button onClick={loadReports} className="btn-primary">Refresh Reports</button>
+        <button type="button" onClick={loadReports} className="btn-primary">
+          Refresh
+        </button>
       </div>
 
       {/* Report Types Grid */}
@@ -259,7 +282,7 @@ export default function ReportsPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className="card hover:shadow-lg transition-shadow cursor-pointer"
+                className="card hover:shadow-lg transition-shadow"
               >
                 <div className="flex items-start gap-4">
                   <div className="p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">

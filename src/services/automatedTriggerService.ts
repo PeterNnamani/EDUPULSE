@@ -42,8 +42,8 @@ export const automatedTriggerService = {
                 .from('academic_sessions')
                 .select('id')
                 .eq('school_id', schoolId)
-                .eq('is_active', true)
-                .single();
+                .eq('is_current', true)
+                .maybeSingle();
 
             if (!session) {
                 console.error('[AUTO_TRIGGER] No active session found');
@@ -54,9 +54,9 @@ export const automatedTriggerService = {
             const { data: term } = await supabase
                 .from('academic_terms')
                 .select('id')
-                .eq('session_id', session.id)
-                .eq('is_active', true)
-                .single();
+                .eq('school_id', schoolId)
+                .eq('is_current', true)
+                .maybeSingle();
 
             let alertCount = 0;
 
@@ -313,8 +313,8 @@ export const automatedTriggerService = {
                 try {
                     // Get current term results
                     const { data: results } = await supabase
-                        .from('results')
-                        .select('score')
+                        .from('grades')
+                        .select('score, max_score')
                         .eq('school_id', schoolId)
                         .eq('student_id', student.id)
                         .order('created_at', { ascending: false })
@@ -323,7 +323,10 @@ export const automatedTriggerService = {
                     if (!results || results.length === 0) continue;
 
                     const currentAverage =
-                        results.reduce((sum, r) => sum + (r.score || 0), 0) / Math.min(results.length, 10);
+                        results.reduce((sum, r) => {
+                            const max = r.max_score && r.max_score > 0 ? r.max_score : 100;
+                            return sum + ((r.score || 0) / max) * 100;
+                        }, 0) / Math.min(results.length, 10);
 
                     // Get previous academic record
                     const { data: previousRecords } = await supabase

@@ -20,7 +20,8 @@ interface NotificationFilters {
 }
 
 export default function NotificationCenter() {
-    const { user, currentSchool } = useAppStore();
+    const { user } = useAppStore();
+    const schoolId = user?.schoolId;
     const [filters, setFilters] = useState<NotificationFilters>({
         status: 'unread',
         priority: 'all',
@@ -32,25 +33,24 @@ export default function NotificationCenter() {
 
     // Fetch all notifications
     const { data: notifications = [], isLoading, refetch } = useQuery(
-        ['all-notifications', user?.id, filters],
+        ['all-notifications', user?.id, schoolId, filters],
         async () => {
-            if (!user?.id || !currentSchool?.id) return [];
+            if (!user?.id || !schoolId) return [];
 
             let allNotifications: Notification[] = [];
 
             if (filters.status === 'all') {
-                // Fetch unread and read
-                const unread = await notificationService.getNotifications(currentSchool.id, user.id, {
+                const unread = await notificationService.getNotifications(schoolId, user.id, {
                     status: 'unread',
                     limit: 100
                 });
-                const read = await notificationService.getNotifications(currentSchool.id, user.id, {
+                const read = await notificationService.getNotifications(schoolId, user.id, {
                     status: 'read',
                     limit: 100
                 });
                 allNotifications = [...unread, ...read];
             } else {
-                allNotifications = await notificationService.getNotifications(currentSchool.id, user.id, {
+                allNotifications = await notificationService.getNotifications(schoolId, user.id, {
                     status: filters.status as NotificationStatus,
                     limit: 100
                 });

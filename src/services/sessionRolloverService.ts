@@ -205,6 +205,7 @@ export const sessionRolloverService = {
                     if (canGraduate) {
                         await graduationService.graduateStudent(
                             student.id,
+                            schoolId,
                             student.class_id,
                             currentSessionId
                         );
@@ -227,6 +228,7 @@ export const sessionRolloverService = {
                             if (eligibility.status === 'promoted') {
                                 await promotionEngine.promoteStudent(
                                     student.id,
+                                    schoolId,
                                     newSessionId,
                                     matchingRule.to_class_id,
                                     'promoted'
@@ -235,6 +237,7 @@ export const sessionRolloverService = {
                             } else if (eligibility.status === 'repeat') {
                                 await promotionEngine.promoteStudent(
                                     student.id,
+                                    schoolId,
                                     newSessionId,
                                     student.class_id,
                                     'repeat'

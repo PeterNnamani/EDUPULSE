@@ -43,17 +43,13 @@ export class PaymentVerificationService {
                 });
 
                 const session = await supabase.auth.getSession();
-                const token = session.data.session?.access_token;
+                const token =
+                    session.data.session?.access_token ??
+                    import.meta.env.VITE_SUPABASE_ANON_KEY;
 
                 if (!token) {
-                    throw new Error('Authentication required - no session found');
+                    throw new Error('Supabase configuration missing');
                 }
-
-                const verificationPayload = {
-                    reference,
-                    schoolId,
-                    email,
-                };
 
                 const response = await fetch(
                     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/paystack`,
@@ -61,9 +57,10 @@ export class PaymentVerificationService {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`,
+                            Authorization: `Bearer ${token}`,
+                            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
                         },
-                        body: JSON.stringify(verificationPayload),
+                        body: JSON.stringify({ reference, schoolId, email }),
                     }
                 );
 

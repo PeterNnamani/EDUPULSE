@@ -12,6 +12,10 @@ import Login from '@/pages/auth/Login';
 import AdminDashboard from '@/pages/admin/Dashboard';
 import TeacherDashboard from '@/pages/teacher/Dashboard';
 import PrincipalDashboard from '@/pages/principal/Dashboard';
+import PrincipalStudentsOverview from '@/pages/principal/StudentsOverview';
+import PrincipalStaffOverview from '@/pages/principal/StaffOverview';
+import PrincipalAttendanceOverview from '@/pages/principal/AttendanceOverview';
+import PrincipalBehaviourOverview from '@/pages/principal/BehaviourOverview';
 import CounselorDashboard from '@/pages/counselor/Dashboard';
 import FinanceDashboard from '@/pages/finance/Dashboard';
 import ParentDashboard from '@/pages/parent/Dashboard';
@@ -28,9 +32,11 @@ import RiskAnalysisPage from '@/pages/risk/RiskAnalysisPage';
 import InterventionsPage from '@/pages/interventions/InterventionsPage';
 import ReportsPage from '@/pages/reports/ReportsPage';
 import SettingsPage from '@/pages/settings/SettingsPage';
+import NotificationCenter from '@/pages/NotificationCenter';
 import SubscriptionsPage from '@/pages/admin/SubscriptionsPage';
 import FeeSettingsPage from '@/pages/admin/FeeSettingsPage';
 import AcademicCalendarSettings from '@/pages/admin/AcademicCalendarSettings';
+import AcademicLifecyclePage from '@/pages/admin/AcademicLifecyclePage';
 import ParentAttendance from '@/pages/parent/ParentAttendance';
 import ParentGrades from '@/pages/parent/ParentGrades';
 import ParentAssignments from '@/pages/parent/ParentAssignments';
@@ -112,8 +118,13 @@ function AppContent() {
         <Route path="/admin/subscriptions" element={<SubscriptionsPage />} />
         <Route path="/admin/fee-settings" element={<FeeSettingsPage />} />
         <Route path="/admin/academic-calendar" element={<AcademicCalendarSettings />} />
+        <Route path="/admin/academic-lifecycle" element={<AcademicLifecyclePage />} />
         <Route path="/teacher" element={<TeacherDashboard />} />
         <Route path="/principal" element={<PrincipalDashboard />} />
+        <Route path="/principal/students" element={<PrincipalStudentsOverview />} />
+        <Route path="/principal/staff" element={<PrincipalStaffOverview />} />
+        <Route path="/principal/attendance" element={<PrincipalAttendanceOverview />} />
+        <Route path="/principal/behaviour" element={<PrincipalBehaviourOverview />} />
         <Route path="/counselor" element={<CounselorDashboard />} />
         <Route path="/finance" element={<FinanceDashboard />} />
         <Route path="/parent" element={<ParentDashboard />} />
@@ -134,6 +145,7 @@ function AppContent() {
         <Route path="/interventions" element={<InterventionsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/notifications" element={<NotificationCenter />} />
         <Route path="/" element={<Navigate to={getDashboardRoute()} replace />} />
         <Route path="*" element={<Navigate to={getDashboardRoute()} replace />} />
       </Route>

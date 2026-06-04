@@ -87,6 +87,16 @@ export async function createAssignment(
         }
 
         console.log('[ASSIGNMENT_CREATED]', data.id, 'for class', request.classId);
+
+        const { dispatchNewAssignment } = await import('@/services/notificationDispatchService');
+        void dispatchNewAssignment(
+            request.schoolId,
+            request.title,
+            data.id,
+            request.classId,
+            request.dueDate
+        );
+
         return { success: true, data };
     } catch (error) {
         console.error('Create assignment error:', error);

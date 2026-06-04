@@ -312,13 +312,19 @@ export async function getTeacherClasses(
 /**
  * Get students in a class
  */
-export async function getClassStudents(classId: string): Promise<Array<any>> {
+export async function getClassStudents(classId: string, schoolId?: string): Promise<Array<any>> {
     try {
-        const { data, error } = await supabase
+        let query = supabase
             .from('students')
             .select('id, student_id, first_name, last_name, middle_name, gender, class_id, status')
             .eq('class_id', classId)
-            .eq('status', 'active')
+            .eq('status', 'active');
+
+        if (schoolId) {
+            query = query.eq('school_id', schoolId);
+        }
+
+        const { data, error } = await query
             .order('last_name, first_name', { ascending: true });
 
         if (error) {

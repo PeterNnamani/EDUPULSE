@@ -18,6 +18,14 @@ import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store';
 import { useAcademicCalendar } from '@/hooks';
 import { getAcademicWeek, AcademicWeekInfo } from '@/utils/academicWeekUtils';
+import {
+  countHighRiskStudents,
+  fetchClassPerformanceChart,
+  fetchWeeklyAttendanceChart,
+  getAttendanceRate,
+  getAverageGrade,
+  getPendingFeesStudentCount,
+} from '@/services/dashboardMetricsService';
 
 interface DashboardStats {
   totalStudents: number;
@@ -63,8 +71,8 @@ export default function AdminDashboard() {
     totalStudents: 0,
     totalStaff: 0,
     totalClasses: 0,
-    attendanceRate: 92,
-    averageGrade: 72,
+    attendanceRate: 0,
+    averageGrade: 0,
     highRiskStudents: 0,
     pendingFees: 0,
     openInterventions: 0,
@@ -226,72 +234,17 @@ export default function AdminDashboard() {
         avgStudentsPerClass = Math.round(totalStudents / totalClasses);
       }
 
-      // Get attendance data for attendance rate and change calculation
-      const { data: attendanceData } = await supabase
-        .from('attendance')
-        .select('present, absent')
-        .eq('school_id', schoolId)
-        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()); // Last 7 days
+      const attendanceRate = await getAttendanceRate(schoolId, 7);
+      const attendanceChange = attendanceRate > 0 ? `${attendanceRate}% (7d)` : 'No records yet';
 
-      let attendanceRate = 92;
-      let attendanceChange = '+0%';
-      if (attendanceData && attendanceData.length > 0) {
-        const totalPresent = attendanceData.reduce((sum: number, a: any) => sum + (a.present || 0), 0);
-        const totalAbsent = attendanceData.reduce((sum: number, a: any) => sum + (a.absent || 0), 0);
-        const total = totalPresent + totalAbsent;
-        if (total > 0) {
-          attendanceRate = Math.round((totalPresent / total) * 100);
-          attendanceChange = `+${Math.max(0, attendanceRate - 85)}%`;
-        }
-      }
+      const averageGrade = await getAverageGrade(schoolId, 30);
+      const gradeChange = averageGrade > 0 ? `${averageGrade}% avg (30d)` : 'No grades yet';
 
-      // Get grades data for average grade and change
-      const { data: gradesData } = await supabase
-        .from('grades')
-        .select('score')
-        .eq('school_id', schoolId)
-        .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()); // Last 30 days
+      const highRiskStudents = await countHighRiskStudents(schoolId);
+      const highRiskChange =
+        highRiskStudents > 0 ? `${highRiskStudents} need attention` : 'None flagged';
 
-      let averageGrade = 72;
-      let gradeChange = '+0%';
-      if (gradesData && gradesData.length > 0) {
-        const avgScore = gradesData.reduce((sum: number, g: any) => sum + (g.score || 0), 0) / gradesData.length;
-        averageGrade = Math.round(avgScore);
-        gradeChange = `+${Math.max(0, Math.round(avgScore - 65))}%`;
-      }
-
-      // Get high risk students from risk_assessments
-      const { data: riskData, count: highRiskCount } = await supabase
-        .from('risk_assessments')
-        .select('id', { count: 'exact' })
-        .eq('school_id', schoolId)
-        .in('risk_level', ['high', 'critical']);
-
-      const highRiskStudents = highRiskCount || 0;
-      console.log('Risk assessments response:', { count: highRiskCount });
-
-      // Get high risk change (comparing to previous month)
-      let highRiskChange = '-0';
-      if (highRiskCount !== null) {
-        const { count: prevHighRisk } = await supabase
-          .from('risk_assessments')
-          .select('id', { count: 'exact' })
-          .eq('school_id', schoolId)
-          .in('risk_level', ['high', 'critical'])
-          .lt('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
-
-        const change = (prevHighRisk || 0) - highRiskCount;
-        highRiskChange = change >= 0 ? `-${change}` : `+${Math.abs(change)}`;
-      }
-
-      // Get pending fees
-      const { data: feeData } = await supabase
-        .from('payments')
-        .select('student_id')
-        .eq('school_id', schoolId)
-        .neq('status', 'paid'); // Get unpaid payments
-
-      const pendingFeesCount = feeData ? new Set(feeData.map((p: any) => p.student_id)).size : 0;
+      const pendingFeesCount = await getPendingFeesStudentCount(schoolId);
 
       // Get interventions
       const interventionsRes = await supabase
@@ -357,15 +310,9 @@ export default function AdminDashboard() {
   };
 
   const fetchAttendanceData = async () => {
+    if (!schoolId) return;
     try {
-      const days = [];
-      for (let i = 4; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        days.push(d);
-      }
-
-      const data = days.map(() => ({ day: '', present: 0, absent: 0 }));
+      const data = await fetchWeeklyAttendanceChart(schoolId);
       setAttendanceData(data);
     } catch (error) {
       console.error('Error fetching attendance:', error);
@@ -401,8 +348,10 @@ export default function AdminDashboard() {
   };
 
   const fetchPerformanceData = async () => {
+    if (!schoolId) return;
     try {
-      setPerformanceData([]);
+      const data = await fetchClassPerformanceChart(schoolId);
+      setPerformanceData(data.map((p) => ({ name: p.class, score: p.average })));
     } catch (error) {
       console.error('Error fetching performance:', error);
     }

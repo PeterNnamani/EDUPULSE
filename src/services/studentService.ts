@@ -249,6 +249,21 @@ export async function createStudentWithParent(
             }
         }
 
+        const { data: classRow } = await supabase
+            .from('classes')
+            .select('name')
+            .eq('id', request.classId)
+            .eq('school_id', request.schoolId)
+            .maybeSingle();
+
+        const { dispatchStudentEnrolled } = await import('@/services/notificationDispatchService');
+        void dispatchStudentEnrolled(
+            request.schoolId,
+            `${request.firstName} ${request.lastName}`,
+            request.classId,
+            classRow?.name ?? 'Class'
+        );
+
         return {
             success: true,
             data: {

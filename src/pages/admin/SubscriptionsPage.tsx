@@ -4,6 +4,15 @@ import { Check, CreditCard, Calendar, TrendingUp, Loader, AlertCircle } from 'lu
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
 import { paymentLogger } from '@/services/paymentLogger';
+import { PaymentVerificationService } from '@/services/paymentVerificationService';
+import {
+  getSchoolSubscriptionStatus,
+  notifySubscriptionActivated,
+  type SchoolSubscriptionStatus,
+} from '@/services/subscriptionService';
+
+const PAYSTACK_PUBLIC_KEY =
+  import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_b2b96677589473d60b1a57c9b0ed6923973ebe6c';
 
 const plans = [
   {
@@ -54,6 +63,7 @@ export default function SubscriptionsPage() {
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [billingHistory, setBillingHistory] = useState<any[]>([]);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SchoolSubscriptionStatus | null>(null);
 
   // Load Paystack script
   useEffect(() => {
@@ -66,27 +76,18 @@ export default function SubscriptionsPage() {
     };
   }, []);
 
-  // Fetch billing history
+  const loadBilling = async () => {
+    if (!user?.schoolId) return;
+    const [history, status] = await Promise.all([
+      PaymentVerificationService.refreshBillingHistory(user.schoolId),
+      getSchoolSubscriptionStatus(user.schoolId),
+    ]);
+    setBillingHistory(history);
+    setSubscriptionStatus(status);
+  };
+
   useEffect(() => {
-    const fetchBillingHistory = async () => {
-      if (!user?.schoolId) return;
-      try {
-        const { data, error: err } = await supabase
-          .from('subscriptions')
-          .select('*')
-          .eq('school_id', user.schoolId)
-          .order('created_at', { ascending: false })
-          .limit(10);
-
-        if (!err && data) {
-          setBillingHistory(data);
-        }
-      } catch (err) {
-        console.error('Error fetching billing history:', err);
-      }
-    };
-
-    fetchBillingHistory();
+    void loadBilling();
   }, [user?.schoolId]);
 
   const handlePayment = async (plan: any) => {
@@ -115,7 +116,7 @@ export default function SubscriptionsPage() {
       }
 
       const handler = PaystackPop.setup({
-        key: 'pk_test_b2b96677589473d60b1a57c9b0ed6923973ebe6c',
+        key: PAYSTACK_PUBLIC_KEY,
         email: user.email,
         amount: plan.price * 100, // Convert to kobo
         currency: 'NGN',
@@ -211,49 +212,19 @@ export default function SubscriptionsPage() {
               reference: response.reference,
             });
 
-            const verificationPayload = {
-              reference: response.reference,
-              schoolId: user.schoolId,
-              email: user.email,
-            };
+            const verification = await PaymentVerificationService.verifyPayment(
+              response.reference,
+              user.schoolId,
+              user.email
+            );
 
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 15000); // 15 second timeout
-
-            try {
-              const verificationResponse = await fetch('https://lkamigufxaxlabkvnzwn.supabase.co/functions/v1/paystack', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(verificationPayload),
-                signal: controller.signal,
-              });
-
-              const verificationData = await verificationResponse.json();
-              clearTimeout(timeout);
-
-              if (!verificationResponse.ok || !verificationData.success) {
-                paymentLogger.paystackVerification(
-                  verificationData.paystackResponse,
-                  verificationData.error || 'Verification failed'
-                );
-                throw new Error(`Payment verification failed: ${verificationData.error}`);
-              }
-
-              paymentLogger.paystackVerification(verificationData.paystackResponse);
-            } catch (fetchErr) {
-              clearTimeout(timeout);
-              if (fetchErr instanceof Error && fetchErr.name === 'AbortError') {
-                throw new Error('Payment verification timed out after 15 seconds. Please try again or contact support.');
-              }
-              throw fetchErr;
+            if (!verification.success) {
+              throw new Error(verification.error || 'Payment verification failed');
             }
 
-            // Step 3: Update subscription to active status (already done by Edge Function)
             paymentLogger.info('SUBSCRIPTION_ACTIVATED', 'Subscription activated after verification', {
               subscriptionId,
-              verificationSuccess: verificationData.subscriptionUpdated,
+              verificationSuccess: true,
             });
 
             // Step 4: Create invoice record for billing tracking
@@ -304,20 +275,9 @@ export default function SubscriptionsPage() {
               );
             }
 
-            // Step 6: Refresh subscription data
-            paymentLogger.info('HISTORY_RELOAD', 'Reloading billing history');
-            const { data: historyData } = await supabase
-              .from('subscriptions')
-              .select('*')
-              .eq('school_id', user.schoolId)
-              .order('created_at', { ascending: false })
-              .limit(10);
+            await notifySubscriptionActivated(user.schoolId, plan.name, plan.price);
+            await loadBilling();
 
-            if (historyData) {
-              setBillingHistory(historyData);
-            }
-
-            // Save all logs to audit trail
             await paymentLogger.saveLogs();
 
             // Step 7: Display success and update UI
@@ -407,13 +367,36 @@ export default function SubscriptionsPage() {
       >
         <div className="flex items-center justify-between">
           <div>
-            <span className="badge badge-warning mb-2">Free Trial</span>
-            <h2 className="text-xl font-bold">You're on a 30-day free trial</h2>
-            <p className="text-sm opacity-80 mt-1">Trial ends: February 25, 2025</p>
+            <span
+              className={`badge mb-2 ${
+                subscriptionStatus?.isExpired
+                  ? 'badge-danger'
+                  : subscriptionStatus?.activePlan
+                    ? 'badge-success'
+                    : 'badge-warning'
+              }`}
+            >
+              {subscriptionStatus?.activePlan
+                ? `${subscriptionStatus.activePlan} plan`
+                : subscriptionStatus?.isTrial
+                  ? 'Free trial'
+                  : subscriptionStatus?.subscriptionStatus ?? 'Trial'}
+            </span>
+            <h2 className="text-xl font-bold">{subscriptionStatus?.label ?? 'Loading subscription…'}</h2>
+            {subscriptionStatus?.trialEndsAt && subscriptionStatus.isTrial && (
+              <p className="text-sm opacity-80 mt-1">
+                Trial ends: {new Date(subscriptionStatus.trialEndsAt).toLocaleDateString()}
+              </p>
+            )}
+            {subscriptionStatus?.activeEndDate && subscriptionStatus.activePlan && (
+              <p className="text-sm opacity-80 mt-1">
+                Renews / ends: {new Date(subscriptionStatus.activeEndDate).toLocaleDateString()}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
-              <p className="text-3xl font-bold">30</p>
+              <p className="text-3xl font-bold">{subscriptionStatus?.daysRemaining ?? '—'}</p>
               <p className="text-xs opacity-70">Days remaining</p>
             </div>
           </div>

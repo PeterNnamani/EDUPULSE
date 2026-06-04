@@ -62,9 +62,10 @@ export default function InterventionsPage() {
         // Get all classes
         const { data: classes } = await supabase
           .from('classes')
-          .select('id, class_name');
+          .select('id, name')
+          .eq('school_id', user!.schoolId);
 
-        const classMap = new Map(classes?.map(c => [c.id, c.class_name]) || []);
+        const classMap = new Map(classes?.map((c) => [c.id, c.name]) || []);
 
         // Map students with class names
         const studentOptions: StudentOption[] = students.map(s => ({
@@ -133,6 +134,7 @@ export default function InterventionsPage() {
               .from('students')
               .select('first_name, last_name, class_id')
               .eq('id', caseItem.student_id)
+              .eq('school_id', user!.schoolId)
               .single();
 
             // Get class info
@@ -140,18 +142,20 @@ export default function InterventionsPage() {
             if (student?.class_id) {
               const { data: classData } = await supabase
                 .from('classes')
-                .select('class_name')
+                .select('name')
                 .eq('id', student.class_id)
+                .eq('school_id', user!.schoolId)
                 .single();
-              className = classData?.class_name || 'N/A';
+              className = classData?.name || 'N/A';
             }
 
             // Get counselor info
             const { data: counselor } = await supabase
               .from('staff')
-              .select('first_name, last_name')
+              .select('full_name')
+              .eq('school_id', user!.schoolId)
               .eq('id', caseItem.assigned_to_id)
-              .single();
+              .maybeSingle();
 
             // Calculate progress (based on activities)
             const { data: activities } = await supabase
@@ -175,7 +179,7 @@ export default function InterventionsPage() {
               type: caseItem.case_category.replace('_intervention', '').replace('_', ' ').toUpperCase(),
               status: caseItem.status,
               priority: caseItem.priority,
-              counselor: counselor ? `${counselor.first_name} ${counselor.last_name}` : 'Unassigned',
+              counselor: counselor?.full_name ?? 'Unassigned',
               startDate,
               progress: Math.round(progress)
             };

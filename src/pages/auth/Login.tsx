@@ -4,6 +4,7 @@ import { Eye, EyeOff, ArrowRight, User, Lock, Phone } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { adminLogin, staffLogin, parentLogin } from '@/services/authService';
 import type { UserRole } from '@/types';
+import { unlockNotificationAudio } from '@/utils/playNotificationSound';
 
 export default function Login() {
   const selectedRole = useAppStore((s) => s.selectedRole);
@@ -46,6 +47,7 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setLoading(true);
+    unlockNotificationAudio();
 
     try {
       if (selectedRole === 'admin') {

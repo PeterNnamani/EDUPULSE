@@ -61,6 +61,7 @@ export default function CounselorDashboard() {
               .from('students')
               .select('first_name, last_name, class_id')
               .eq('id', caseItem.studentId)
+              .eq('school_id', user!.schoolId)
               .single();
 
             // Fetch class name
@@ -68,10 +69,11 @@ export default function CounselorDashboard() {
             if (student?.class_id) {
               const { data: classData } = await supabase
                 .from('classes')
-                .select('class_name')
+                .select('name')
                 .eq('id', student.class_id)
+                .eq('school_id', user!.schoolId)
                 .single();
-              className = classData?.class_name || 'N/A';
+              className = classData?.name || 'N/A';
             }
 
             // Calculate days open
@@ -120,19 +122,26 @@ export default function CounselorDashboard() {
       const validCases = casesWithStudents.filter((c): c is CaseWithStudent => c !== null);
       setOpenCases(validCases);
 
-      // Calculate risk distribution stats
-      const stats = [
-        { label: 'Critical Risk', count: validCases.filter(c => c.risk === 'critical').length },
-        { label: 'High Risk', count: validCases.filter(c => c.risk === 'high').length },
-        { label: 'Medium Risk', count: validCases.filter(c => c.risk === 'medium').length },
-        { label: 'Low Risk', count: validCases.filter(c => c.risk === 'low').length }
-      ];
+      // School-wide risk distribution (students table, same as risk engine)
+      const { data: schoolStudents } = await supabase
+        .from('students')
+        .select('risk_level')
+        .eq('school_id', user!.schoolId)
+        .eq('status', 'active');
 
-      setRiskStats(stats.map((stat, idx) => ({
-        ...stat,
-        value: stat.count,
-        color: ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'][idx]
-      })));
+      const riskCounts = { critical: 0, high: 0, medium: 0, low: 0 };
+      for (const s of schoolStudents ?? []) {
+        const level = (s.risk_level as keyof typeof riskCounts) || 'low';
+        if (level in riskCounts) riskCounts[level]++;
+        else riskCounts.low++;
+      }
+
+      setRiskStats([
+        { label: 'Critical Risk', value: riskCounts.critical, color: 'bg-red-500' },
+        { label: 'High Risk', value: riskCounts.high, color: 'bg-orange-500' },
+        { label: 'Medium Risk', value: riskCounts.medium, color: 'bg-yellow-500' },
+        { label: 'Low Risk', value: riskCounts.low, color: 'bg-green-500' },
+      ]);
 
       // Get recent interventions
       const recentCases = validCases.slice(0, 5);
@@ -149,12 +158,18 @@ export default function CounselorDashboard() {
       );
       setRecentInterventions(interventions);
 
-      // Get scheduled activities (upcoming meetings)
+      const todayStr = new Date().toISOString().split('T')[0];
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
       const { data: activities } = await supabase
         .from('intervention_activities')
         .select('*')
         .eq('school_id', user!.schoolId)
         .eq('status', 'scheduled')
+        .gte('scheduled_date', todayStr)
+        .lt('scheduled_date', tomorrowStr)
         .order('scheduled_date', { ascending: true })
         .limit(5);
 

@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { DollarSign, CreditCard, AlertTriangle, Plus, Search, Download, Users } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store';
+import RecordPaymentModal from '@/components/fees/RecordPaymentModal';
 
 export default function FeesPage() {
   const { user } = useAppStore();
+  const location = useLocation();
   const schoolId = user?.schoolId;
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -27,6 +30,14 @@ export default function FeesPage() {
       fetchFeeData();
     }
   }, [schoolId]);
+
+  useEffect(() => {
+    const state = location.state as { openPayment?: boolean } | null;
+    if (state?.openPayment) {
+      setShowPaymentModal(true);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     filterRecords();
@@ -58,7 +69,7 @@ export default function FeesPage() {
       try {
         const { data: cls, error } = await supabase
           .from('classes')
-          .select('id, class_name')
+          .select('id, name')
           .eq('school_id', schoolId);
         if (error) throw error;
         classesData = cls || [];
@@ -118,7 +129,7 @@ export default function FeesPage() {
           id: student.id,
           student: `${student.first_name} ${student.last_name}`,
           studentId: student.student_id,
-          class: studentClass?.class_name || 'Unknown',
+          class: studentClass?.name || 'Unknown',
           feeType: 'Tuition',
           amount: feeAmount,
           paid: totalPaid,
@@ -271,7 +282,7 @@ export default function FeesPage() {
           >
             <option value="">All Classes</option>
             {classes.map(cls => (
-              <option key={cls.id} value={cls.class_name}>{cls.class_name}</option>
+              <option key={cls.id} value={cls.name}>{cls.name}</option>
             ))}
           </select>
         </div>
@@ -327,49 +338,13 @@ export default function FeesPage() {
         </div>
       </motion.div>
 
-      {showPaymentModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-md bg-white dark:bg-dark-bg rounded-2xl shadow-xl"
-          >
-            <div className="p-6 border-b border-border dark:border-gray-800">
-              <h2 className="text-xl font-bold">Record Payment</h2>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="label mb-1.5 block">Student</label>
-                <input className="input-field" placeholder="Search student..." />
-              </div>
-              <div>
-                <label className="label mb-1.5 block">Amount</label>
-                <input type="number" className="input-field" placeholder="NGN 0.00" />
-              </div>
-              <div>
-                <label className="label mb-1.5 block">Payment Method</label>
-                <select className="input-field">
-                  <option value="cash">Cash</option>
-                  <option value="bank_transfer">Bank Transfer</option>
-                  <option value="card">Card</option>
-                  <option value="paystack">Paystack</option>
-                </select>
-              </div>
-              <div>
-                <label className="label mb-1.5 block">Reference</label>
-                <input className="input-field" placeholder="Transaction reference" />
-              </div>
-              <div>
-                <label className="label mb-1.5 block">Notes</label>
-                <textarea className="input-field min-h-20" placeholder="Optional notes..." />
-              </div>
-            </div>
-            <div className="p-6 border-t border-border dark:border-gray-800 flex justify-end gap-3">
-              <button onClick={() => setShowPaymentModal(false)} className="btn-secondary">Cancel</button>
-              <button onClick={() => setShowPaymentModal(false)} className="btn-primary">Record Payment</button>
-            </div>
-          </motion.div>
-        </div>
+      {showPaymentModal && schoolId && (
+        <RecordPaymentModal
+          schoolId={schoolId}
+          staffId={user?.id}
+          onClose={() => setShowPaymentModal(false)}
+          onSuccess={() => fetchFeeData()}
+        />
       )}
     </div>
   );

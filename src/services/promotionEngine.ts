@@ -55,7 +55,7 @@ export const promotionEngine = {
                 attendance: (academicRecord.attendance_rate || 0) >= rules.attendance_threshold,
                 grades: (academicRecord.average_score || 0) >= rules.grade_threshold,
                 behaviour: (academicRecord.behaviour_score || 0) >= rules.behaviour_threshold,
-                fees: await this.checkFeesStatus(studentId, sessionId)
+                fees: await this.checkFeesStatus(studentId, sessionId, schoolId)
             };
 
             // Check if eligible for promotion
@@ -100,7 +100,7 @@ export const promotionEngine = {
     /**
      * Check if student has outstanding fees
      */
-    async checkFeesStatus(studentId: string, sessionId: string) {
+    async checkFeesStatus(studentId: string, sessionId: string, schoolId?: string) {
         try {
             const { data: obligations } = await supabase
                 .from('fee_obligations')
@@ -108,16 +108,44 @@ export const promotionEngine = {
                 .eq('student_id', studentId)
                 .eq('session_id', sessionId);
 
-            if (!obligations || obligations.length === 0) {
-                return true; // No fees assigned
+            if (obligations && obligations.length > 0) {
+                const hasOutstanding = obligations.some(
+                    (o) => !o.paid_in_full && Number(o.amount_outstanding) > 0
+                );
+                return !hasOutstanding;
             }
 
-            // Check if any fees are outstanding
-            const hasOutstanding = obligations.some(o => !o.paid_in_full && o.amount_outstanding > 0);
-            return !hasOutstanding;
+            if (!schoolId) return true;
+
+            const { data: student } = await supabase
+                .from('students')
+                .select('class_id')
+                .eq('id', studentId)
+                .maybeSingle();
+            if (!student?.class_id) return true;
+
+            const [{ data: classFee }, { data: payments }] = await Promise.all([
+                supabase
+                    .from('fees')
+                    .select('amount')
+                    .eq('school_id', schoolId)
+                    .eq('class_id', student.class_id)
+                    .eq('is_active', true)
+                    .maybeSingle(),
+                supabase
+                    .from('payments')
+                    .select('amount')
+                    .eq('school_id', schoolId)
+                    .eq('student_id', studentId)
+                    .eq('status', 'completed'),
+            ]);
+            const expected = Number(classFee?.amount ?? 0);
+            if (expected <= 0) return true;
+            const paid = (payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
+            return paid >= expected;
         } catch (error) {
             console.error('Error checking fees status:', error);
-            return true; // Allow if error
+            return true;
         }
     },
 
@@ -126,6 +154,7 @@ export const promotionEngine = {
      */
     async promoteStudent(
         studentId: string,
+        schoolId: string,
         sessionId: string,
         newClassId: string,
         promotionStatus: PromotionStatus,
@@ -133,20 +162,24 @@ export const promotionEngine = {
         approvedBy?: string
     ) {
         try {
-            // Create academic record for new class
             const { error: recordError } = await supabase
                 .from('student_academic_records')
-                .insert({
-                    student_id: studentId,
-                    session_id: sessionId,
-                    class_id: newClassId,
-                    promoted: promotionStatus === 'promoted',
-                    promotion_status: promotionStatus,
-                    promotion_notes: notes,
-                    principal_approved: !!approvedBy,
-                    approved_by: approvedBy,
-                    approved_at: approvedBy ? new Date() : null
-                });
+                .upsert(
+                    {
+                        school_id: schoolId,
+                        student_id: studentId,
+                        session_id: sessionId,
+                        class_id: newClassId,
+                        promoted: promotionStatus === 'promoted',
+                        promotion_status: promotionStatus,
+                        promotion_notes: notes,
+                        principal_approved: !!approvedBy,
+                        approved_by: approvedBy,
+                        approved_at: approvedBy ? new Date().toISOString() : null,
+                        updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'student_id,session_id,term_id' }
+                );
 
             if (recordError) throw recordError;
 
@@ -202,6 +235,7 @@ export const promotionEngine = {
 
                 const result = await this.promoteStudent(
                     student.id,
+                    schoolId,
                     sessionId,
                     eligibility.status === 'promoted' ? toClassId : fromClassId,
                     eligibility.status

@@ -63,9 +63,9 @@ export default function FeeSettingsPage() {
             try {
                 const { data: cls, error: clsError } = await supabase
                     .from('classes')
-                    .select('id, class_name')
+                    .select('id, name')
                     .eq('school_id', schoolId)
-                    .order('class_name');
+                    .order('name');
                 if (clsError) throw clsError;
                 classesData = cls || [];
                 setClasses(classesData);
@@ -88,7 +88,7 @@ export default function FeeSettingsPage() {
                 // Merge with class names
                 feesData = (feesRaw || []).map(f => ({
                     ...f,
-                    class_name: classesData.find(c => c.id === f.class_id)?.class_name || 'Unknown',
+                    class_name: classesData.find(c => c.id === f.class_id)?.name || 'Unknown',
                 }));
                 setFees(feesData);
                 console.log('✓ Fees:', feesData.length);
@@ -360,7 +360,7 @@ export default function FeeSettingsPage() {
                                 >
                                     <option value="">Select a class</option>
                                     {classes.map(cls => (
-                                        <option key={cls.id} value={cls.id}>{cls.class_name}</option>
+                                        <option key={cls.id} value={cls.id}>{cls.name}</option>
                                     ))}
                                 </select>
                             </div>

@@ -113,8 +113,33 @@ async function updateSubscriptionRecord(
             };
         }
 
-        // If subscription already updated, return success
         if (existingSubscription) {
+            const { data: activated, error: activateError } = await supabase
+                .from("subscriptions")
+                .update({
+                    status: "active",
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("id", existingSubscription.id)
+                .eq("school_id", schoolId)
+                .neq("status", "active")
+                .select("id");
+
+            if (activateError) {
+                return {
+                    success: false,
+                    error: `Failed to activate existing subscription: ${activateError.message}`,
+                };
+            }
+
+            await supabase
+                .from("schools")
+                .update({
+                    subscription_status: "active",
+                    updated_at: new Date().toISOString(),
+                })
+                .eq("id", schoolId);
+
             return {
                 success: true,
                 subscriptionId: existingSubscription.id,

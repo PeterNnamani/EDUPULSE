@@ -63,14 +63,19 @@ export default function TeacherDashboard() {
             // Get average grades for the class
             const { data: grades, error } = await supabase
               .from('grades')
-              .select('score')
+              .select('score, max_score')
+              .eq('school_id', user!.schoolId)
               .eq('class_id', cls.id);
 
             if (error || !grades || grades.length === 0) {
               return { subject: cls.name, average: 0 };
             }
 
-            const average = grades.reduce((sum, g) => sum + (g.score || 0), 0) / grades.length;
+            const average =
+              grades.reduce((sum, g) => {
+                const max = g.max_score && g.max_score > 0 ? g.max_score : 100;
+                return sum + ((g.score || 0) / max) * 100;
+              }, 0) / grades.length;
             return { subject: cls.name, average: Math.round(average) };
           })
         );
@@ -78,34 +83,32 @@ export default function TeacherDashboard() {
 
         // Get at-risk students
         const allStudents = await Promise.all(
-          teacherClasses.map((cls) => getClassStudents(cls.id))
+          teacherClasses.map((cls) => getClassStudents(cls.id, user!.schoolId))
         );
 
         const riskAssessments: any[] = [];
-        for (const cls of teacherClasses) {
-          const { data: risks, error: riskError } = await supabase
-            .from('risk_assessments')
-            .select('student_id, risk_level, reason')
-            .eq('class_id', cls.id)
-            .gt('risk_score', 50)
+        for (let i = 0; i < teacherClasses.length; i++) {
+          const cls = teacherClasses[i];
+          const classStudentIds = (allStudents[i] ?? []).map((s: { id: string }) => s.id);
+          if (classStudentIds.length === 0) continue;
+
+          const { data: atRiskStudents, error: riskError } = await supabase
+            .from('students')
+            .select('id, first_name, last_name, risk_level, risk_score')
+            .eq('school_id', user!.schoolId)
+            .in('id', classStudentIds)
+            .in('risk_level', ['medium', 'high', 'critical'])
+            .order('risk_score', { ascending: false })
             .limit(3);
 
-          if (!riskError && risks) {
-            for (const risk of risks) {
-              const { data: student } = await supabase
-                .from('students')
-                .select('first_name, last_name')
-                .eq('id', risk.student_id)
-                .single();
-
-              if (student) {
-                riskAssessments.push({
-                  name: `${student.first_name} ${student.last_name}`,
-                  class: cls.name,
-                  risk: risk.risk_level || 'medium',
-                  reason: risk.reason || 'At risk',
-                });
-              }
+          if (!riskError && atRiskStudents) {
+            for (const student of atRiskStudents) {
+              riskAssessments.push({
+                name: `${student.first_name} ${student.last_name}`,
+                class: cls.name,
+                risk: student.risk_level || 'medium',
+                reason: `Risk score ${student.risk_score ?? '—'}`,
+              });
             }
           }
         }

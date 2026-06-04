@@ -229,12 +229,6 @@ export const notificationService = {
                 .eq('recipient_id', userId)
                 .order('created_at', { ascending: false });
 
-            // Note: status filtering skipped if column doesn't exist yet
-            // This will be enabled once migration is applied
-            // if (options?.status) {
-            //     query = query.eq('status', options.status);
-            // }
-
             if (options?.limit) {
                 query = query.limit(options.limit);
             }
@@ -250,11 +244,23 @@ export const notificationService = {
                 return [];
             }
 
-            // If status column exists, filter by it; otherwise return all
-            const unreadOnly = options?.status === 'unread';
-            return data
-                .filter(n => !unreadOnly || n.status !== 'archived' && n.status !== 'read')
-                .map(n => ({
+            let rows = data ?? [];
+
+            if (options?.status === 'unread') {
+                rows = rows.filter(
+                    (n) =>
+                        !n.archived_at &&
+                        (n.status === 'unread' || (!n.read_at && n.status !== 'read' && n.status !== 'archived'))
+                );
+            } else if (options?.status === 'read') {
+                rows = rows.filter((n) => n.status === 'read' || !!n.read_at);
+            } else if (options?.status === 'archived') {
+                rows = rows.filter((n) => n.status === 'archived' || !!n.archived_at);
+            } else {
+                rows = rows.filter((n) => n.status !== 'archived' && !n.archived_at);
+            }
+
+            return rows.map(n => ({
                     id: n.id,
                     schoolId: n.school_id,
                     recipientId: n.recipient_id,
@@ -285,8 +291,8 @@ export const notificationService = {
             const { error } = await supabase
                 .from('notifications')
                 .update({
-                    // status: 'read', // Will use read_at instead
-                    read_at: new Date().toISOString()
+                    status: 'read',
+                    read_at: new Date().toISOString(),
                 })
                 .eq('id', notificationId);
 
@@ -311,8 +317,8 @@ export const notificationService = {
             const { error } = await supabase
                 .from('notifications')
                 .update({
-                    // status: 'archived', // Will use archived_at instead
-                    archived_at: new Date().toISOString()
+                    status: 'archived',
+                    archived_at: new Date().toISOString(),
                 })
                 .eq('id', notificationId);
 
@@ -349,8 +355,15 @@ export const notificationService = {
             let archivedCount = 0;
 
             if (notifications && Array.isArray(notifications)) {
-                unreadCount = notifications.filter(n => !n.read_at).length;
-                archivedCount = notifications.filter(n => n.archived_at).length;
+                unreadCount = notifications.filter(
+                    (n) =>
+                        !n.archived_at &&
+                        n.status !== 'archived' &&
+                        (n.status === 'unread' || !n.read_at)
+                ).length;
+                archivedCount = notifications.filter(
+                    (n) => n.archived_at || n.status === 'archived'
+                ).length;
             }
 
             return {

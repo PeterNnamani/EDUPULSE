@@ -95,7 +95,7 @@ export const escalationService = {
     /**
      * Evaluate single alert and escalate if needed
      */
-    private async evaluateAndEscalateAlert(schoolId: string, alert: any): Promise<boolean> {
+    async evaluateAndEscalateAlert(schoolId: string, alert: any): Promise<boolean> {
         try {
             const createdDate = new Date(alert.created_at);
             const now = new Date();
@@ -233,7 +233,7 @@ export const escalationService = {
     /**
      * Notify stakeholders based on escalation level
      */
-    private async notifyStakeholders(
+    async notifyStakeholders(
         schoolId: string,
         alert: any,
         studentName: string,
@@ -351,7 +351,7 @@ export const escalationService = {
     // HELPER METHODS
     // ============================================================================
 
-    private async getParentIds(studentId: string): Promise<string[]> {
+    async getParentIds(studentId: string): Promise<string[]> {
         try {
             const { data } = await supabase
                 .from('student_parents')
@@ -366,7 +366,7 @@ export const escalationService = {
         }
     },
 
-    private async getTeacherIds(studentId: string): Promise<string[]> {
+    async getTeacherIds(studentId: string): Promise<string[]> {
         try {
             const { data: student } = await supabase
                 .from('students')
@@ -389,7 +389,7 @@ export const escalationService = {
         }
     },
 
-    private async getCounselorIds(schoolId: string): Promise<string[]> {
+    async getCounselorIds(schoolId: string): Promise<string[]> {
         try {
             const { data } = await supabase
                 .from('staff')
@@ -403,7 +403,7 @@ export const escalationService = {
         }
     },
 
-    private async getPrincipalIds(schoolId: string): Promise<string[]> {
+    async getPrincipalIds(schoolId: string): Promise<string[]> {
         try {
             const { data } = await supabase
                 .from('staff')
@@ -417,7 +417,7 @@ export const escalationService = {
         }
     },
 
-    private async getAdminIds(schoolId: string): Promise<string[]> {
+    async getAdminIds(schoolId: string): Promise<string[]> {
         try {
             const { data } = await supabase
                 .from('auth.users')

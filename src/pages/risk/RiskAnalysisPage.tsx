@@ -4,6 +4,7 @@ import { AlertTriangle, TrendingUp, Users, Activity, BarChart3, Loader } from 'l
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, PieChart as RechartsPie, Pie, Cell } from 'recharts';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
+import { riskDetectionService } from '@/services/riskDetectionService';
 
 interface RiskStudent {
   id: string;
@@ -37,6 +38,8 @@ export default function RiskAnalysisPage() {
     highRisk: 0,
     critical: 0,
   });
+  const [isAssessing, setIsAssessing] = useState(false);
+  const [assessMessage, setAssessMessage] = useState('');
 
   useEffect(() => {
     if (user?.id && user?.schoolId) {
@@ -66,9 +69,10 @@ export default function RiskAnalysisPage() {
       // Get classes
       const { data: classesData } = await supabase
         .from('classes')
-        .select('id, class_name');
+        .select('id, name')
+        .eq('school_id', user!.schoolId);
 
-      const classMap = new Map(classesData?.map(c => [c.id, c.class_name]) || []);
+      const classMap = new Map(classesData?.map((c) => [c.id, c.name]) || []);
 
       // Get risk scores
       const { data: riskScores } = await supabase
@@ -160,6 +164,26 @@ export default function RiskAnalysisPage() {
     }
   };
 
+  const runFullAssessment = async () => {
+    if (!user?.schoolId) return;
+    setIsAssessing(true);
+    setAssessMessage('');
+    try {
+      const { processed, errors } = await riskDetectionService.recalculateSchool(user.schoolId);
+      setAssessMessage(
+        errors > 0
+          ? `Assessed ${processed} students (${errors} could not be scored).`
+          : `Risk assessment complete for ${processed} students.`
+      );
+      await loadRealData();
+    } catch (e) {
+      console.error('[RISK] Assessment failed:', e);
+      setAssessMessage('Risk assessment failed. Check console and ensure migrations are applied.');
+    } finally {
+      setIsAssessing(false);
+    }
+  };
+
   const total = riskStats.lowRisk + riskStats.mediumRisk + riskStats.highRisk + riskStats.critical || 1;
 
   return (
@@ -168,8 +192,18 @@ export default function RiskAnalysisPage() {
         <div>
           <h1 className="text-2xl font-bold">Risk Analysis</h1>
           <p className="text-secondary-text">AI-powered student risk monitoring</p>
+          {assessMessage && (
+            <p className="text-sm text-green-600 dark:text-green-400 mt-1">{assessMessage}</p>
+          )}
         </div>
-        <button onClick={loadRealData} className="btn-primary">Run Risk Assessment</button>
+        <button
+          onClick={runFullAssessment}
+          disabled={isAssessing || isLoading}
+          className="btn-primary flex items-center gap-2 disabled:opacity-60"
+        >
+          {isAssessing && <Loader className="w-4 h-4 animate-spin" />}
+          {isAssessing ? 'Assessing…' : 'Run Risk Assessment'}
+        </button>
       </div>
 
       {/* Summary Stats */}

@@ -115,7 +115,7 @@ export const alertManagementService = {
     /**
      * Check if alert already exists
      */
-    private async checkExistingAlert(
+    async checkExistingAlert(
         schoolId: string,
         studentId: string,
         alertType: AlertType
@@ -139,7 +139,7 @@ export const alertManagementService = {
     /**
      * Notify stakeholders about the alert
      */
-    private async notifyStakeholders(
+    async notifyStakeholders(
         request: CreateAlertRequest,
         alertId: string
     ): Promise<void> {
@@ -452,7 +452,7 @@ export const alertManagementService = {
     // HELPER METHODS
     // ============================================================================
 
-    private mapAlertData(data: any): StudentAlert {
+    mapAlertData(data: any): StudentAlert {
         return {
             id: data.id,
             schoolId: data.school_id,
@@ -476,7 +476,7 @@ export const alertManagementService = {
         };
     },
 
-    private mapRiskLevelToPriority(riskLevel: RiskLevel): 'low' | 'medium' | 'high' | 'critical' {
+    mapRiskLevelToPriority(riskLevel: RiskLevel): 'low' | 'medium' | 'high' | 'critical' {
         switch (riskLevel) {
             case 'critical':
                 return 'critical';
@@ -491,67 +491,59 @@ export const alertManagementService = {
         }
     },
 
-    private async getStudentParents(studentId: string): Promise<Array<{ userId: string }>> {
+    async getStudentParents(studentId: string): Promise<Array<{ userId: string }>> {
         try {
             const { data } = await supabase
                 .from('student_parents')
-                .select('parent:parent_id(auth_user_id)')
+                .select('parent_id')
                 .eq('student_id', studentId);
 
-            return (data || [])
-                .map((item: any) => ({ userId: item.parent?.auth_user_id }))
-                .filter((item: any) => item.userId);
+            return (data || []).map((item) => ({ userId: item.parent_id }));
         } catch (error) {
             return [];
         }
     },
 
-    private async getStudentTeachers(studentId: string): Promise<Array<{ userId: string }>> {
+    async getStudentTeachers(studentId: string): Promise<Array<{ userId: string }>> {
         try {
             const { data: student } = await supabase
                 .from('students')
-                .select('class_id')
+                .select('class_id, classes(class_teacher_id)')
                 .eq('id', studentId)
                 .single();
 
-            if (!student?.class_id) return [];
-
-            const { data: staffClasses } = await supabase
-                .from('staff_classes')
-                .select('staff:staff_id(user_id)')
-                .eq('class_id', student.class_id);
-
-            return (staffClasses || [])
-                .map((item: any) => ({ userId: item.staff?.user_id }))
-                .filter((item: any) => item.userId);
+            const teacherId = (student?.classes as { class_teacher_id?: string } | null)?.class_teacher_id;
+            return teacherId ? [{ userId: teacherId }] : [];
         } catch (error) {
             return [];
         }
     },
 
-    private async getSchoolCounselors(schoolId: string): Promise<Array<{ userId: string }>> {
+    async getSchoolCounselors(schoolId: string): Promise<Array<{ userId: string }>> {
         try {
             const { data } = await supabase
                 .from('staff')
-                .select('user_id')
+                .select('id')
                 .eq('school_id', schoolId)
-                .eq('staff_role', 'counselor');
+                .eq('role', 'counselor')
+                .eq('is_active', true);
 
-            return data?.map(s => ({ userId: s.user_id })) || [];
+            return data?.map((s) => ({ userId: s.id })) || [];
         } catch (error) {
             return [];
         }
     },
 
-    private async getSchoolPrincipals(schoolId: string): Promise<Array<{ userId: string }>> {
+    async getSchoolPrincipals(schoolId: string): Promise<Array<{ userId: string }>> {
         try {
             const { data } = await supabase
                 .from('staff')
-                .select('user_id')
+                .select('id')
                 .eq('school_id', schoolId)
-                .eq('staff_role', 'principal');
+                .eq('role', 'principal')
+                .eq('is_active', true);
 
-            return data?.map(s => ({ userId: s.user_id })) || [];
+            return data?.map((s) => ({ userId: s.id })) || [];
         } catch (error) {
             return [];
         }

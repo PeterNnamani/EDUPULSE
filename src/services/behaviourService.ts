@@ -90,6 +90,13 @@ export async function recordBehaviour(
         }
 
         console.log('[BEHAVIOUR_RECORDED]', studentId, behaviourType, 'points', calculatedPoints);
+
+        const { dispatchBehaviourRecorded } = await import('@/services/notificationDispatchService');
+        void dispatchBehaviourRecorded(schoolId, studentId, behaviourType, description);
+
+        const { scheduleRiskRecalculation } = await import('@/services/riskRecalculate');
+        scheduleRiskRecalculation(schoolId, studentId);
+
         return { success: true };
     } catch (error) {
         console.error('Record behaviour error:', error);

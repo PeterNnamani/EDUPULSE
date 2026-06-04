@@ -476,7 +476,7 @@ export const notificationTriggerService = {
                     title: titleMap[eventType],
                     message,
                     priority: priority as NotificationPriority,
-                    actionUrl: `/admin/subscription`,
+                    actionUrl: `/admin/subscriptions`,
                     deliveryChannels: ['in_app', 'email']
                 });
             }
@@ -491,7 +491,7 @@ export const notificationTriggerService = {
                     title: titleMap[eventType],
                     message,
                     priority: priority as NotificationPriority,
-                    actionUrl: `/finance/subscription`,
+                    actionUrl: `/admin/subscriptions`,
                     deliveryChannels: ['in_app', 'email']
                 });
             }

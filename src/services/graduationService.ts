@@ -118,18 +118,19 @@ export const graduationService = {
      */
     async graduateStudent(
         studentId: string,
+        schoolId: string,
         finalClassId: string,
         sessionId: string,
         finalGPA?: number,
         remarks?: string
     ) {
         try {
-            // Create graduation record
             const certificateNumber = await this.generateCertificateNumber(sessionId);
 
             const { data: graduation, error: gradError } = await supabase
                 .from('graduation_records')
                 .insert({
+                    school_id: schoolId,
                     student_id: studentId,
                     final_class_id: finalClassId,
                     session_id: sessionId,

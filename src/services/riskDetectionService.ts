@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { alertManagementService, AlertType } from './alertManagementService';
+import { getCurrentSession, getCurrentTerm } from '@/utils/calendarUtils';
 
 export interface RiskAssessment {
     studentId: string;
@@ -64,12 +65,12 @@ export const riskDetectionService = {
             // Store risk score in database
             const { data, error } = await supabase
                 .from('risk_scores')
-                .upsert([
+                .upsert(
                     {
                         school_id: schoolId,
                         student_id: studentId,
                         session_id: sessionId,
-                        term_id: termId,
+                        term_id: termId ?? null,
                         attendance_risk: assessment.attendanceRisk,
                         academic_risk: assessment.academicRisk,
                         assignment_risk: assessment.assignmentRisk,
@@ -79,9 +80,11 @@ export const riskDetectionService = {
                         risk_level: assessment.riskLevel,
                         calculation_method: 'weighted_average',
                         factors_considered: assessment.factors,
-                        last_calculated: new Date().toISOString()
-                    }
-                ])
+                        last_calculated: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'school_id,student_id,session_id,term_id' }
+                )
                 .select()
                 .single();
 
@@ -92,8 +95,17 @@ export const riskDetectionService = {
 
             console.log(`[RISK_DETECTION] Calculated risk score for student ${studentId}: ${assessment.overallRisk} (${assessment.riskLevel})`);
 
-            // Check if alerts need to be created/updated
             await this.triggerAlerts(schoolId, studentId, assessment, data.id);
+
+            await supabase
+                .from('students')
+                .update({
+                    risk_level: assessment.riskLevel,
+                    risk_score: assessment.overallRisk,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', studentId)
+                .eq('school_id', schoolId);
 
             return this.mapRiskScoreData(data);
         } catch (error) {
@@ -105,7 +117,7 @@ export const riskDetectionService = {
     /**
      * Perform comprehensive risk assessment
      */
-    private async performRiskAssessment(
+    async performRiskAssessment(
         schoolId: string,
         studentId: string,
         sessionId: string,
@@ -160,7 +172,7 @@ export const riskDetectionService = {
     /**
      * Assess attendance risk (0-100 scale)
      */
-    private async assessAttendanceRisk(
+    async assessAttendanceRisk(
         schoolId: string,
         studentId: string,
         termId?: string
@@ -174,7 +186,7 @@ export const riskDetectionService = {
                 .eq('student_id', studentId);
 
             if (termId) {
-                query = query.eq('term_id', termId);
+                query = query.eq('academic_term_id', termId);
             }
 
             const { data: records } = await query;
@@ -222,31 +234,33 @@ export const riskDetectionService = {
     /**
      * Assess academic risk (0-100 scale)
      */
-    private async assessAcademicRisk(
+    async assessAcademicRisk(
         schoolId: string,
         studentId: string,
         termId?: string
     ): Promise<number> {
         try {
-            // Get current term results
             let query = supabase
-                .from('results')
-                .select('score')
+                .from('grades')
+                .select('score, max_score')
                 .eq('school_id', schoolId)
                 .eq('student_id', studentId);
 
             if (termId) {
-                query = query.eq('term_id', termId);
+                query = query.eq('academic_term_id', termId);
             }
 
-            const { data: currentResults } = await query;
+            const { data: gradeRows } = await query;
 
-            if (!currentResults || currentResults.length === 0) {
+            if (!gradeRows || gradeRows.length === 0) {
                 return 0;
             }
 
             const currentAverage =
-                currentResults.reduce((sum, r) => sum + (r.score || 0), 0) / currentResults.length;
+                gradeRows.reduce((sum, g) => {
+                    const max = g.max_score && g.max_score > 0 ? g.max_score : 100;
+                    return sum + ((g.score || 0) / max) * 100;
+                }, 0) / gradeRows.length;
 
             // Get previous term results for comparison
             const { data: previousResults } = await supabase
@@ -289,7 +303,7 @@ export const riskDetectionService = {
     /**
      * Assess assignment risk (0-100 scale)
      */
-    private async assessAssignmentRisk(
+    async assessAssignmentRisk(
         schoolId: string,
         studentId: string,
         termId?: string
@@ -311,7 +325,7 @@ export const riskDetectionService = {
                 .eq('class_id', student.class_id);
 
             if (termId) {
-                query = query.eq('term_id', termId);
+                query = query.eq('academic_term_id', termId);
             }
 
             const { data: assignments } = await query;
@@ -324,7 +338,9 @@ export const riskDetectionService = {
             const { data: submissions } = await supabase
                 .from('assignment_submissions')
                 .select('assignment_id')
-                .eq('student_id', studentId);
+                .eq('school_id', schoolId)
+                .eq('student_id', studentId)
+                .in('status', ['submitted', 'graded', 'late']);
 
             const submissionCount = submissions?.length || 0;
             const completionRate = (submissionCount / assignments.length) * 100;
@@ -351,7 +367,7 @@ export const riskDetectionService = {
     /**
      * Assess behaviour risk (0-100 scale)
      */
-    private async assessBehaviourRisk(
+    async assessBehaviourRisk(
         schoolId: string,
         studentId: string
     ): Promise<number> {
@@ -365,7 +381,7 @@ export const riskDetectionService = {
                 .select('*')
                 .eq('school_id', schoolId)
                 .eq('student_id', studentId)
-                .gte('created_at', thirtyDaysAgo.toISOString());
+                .gte('date', thirtyDaysAgo.toISOString().split('T')[0]);
 
             if (!incidents || incidents.length === 0) {
                 return 0;
@@ -401,48 +417,71 @@ export const riskDetectionService = {
     /**
      * Assess fee/payment risk (0-100 scale)
      */
-    private async assessFeeRisk(
+    async assessFeeRisk(
         schoolId: string,
         studentId: string
     ): Promise<number> {
         try {
-            // Get outstanding fees
             const { data: obligations } = await supabase
                 .from('fee_obligations')
-                .select('*')
+                .select('due_date, status')
                 .eq('school_id', schoolId)
                 .eq('student_id', studentId)
                 .eq('status', 'pending');
 
-            if (!obligations || obligations.length === 0) {
+            let maxDaysOverdue = 0;
+            if (obligations?.length) {
+                const today = new Date();
+                for (const obligation of obligations) {
+                    if (!obligation.due_date) continue;
+                    const daysOverdue = Math.floor(
+                        (today.getTime() - new Date(obligation.due_date).getTime()) / 86400000
+                    );
+                    if (daysOverdue > maxDaysOverdue) maxDaysOverdue = daysOverdue;
+                }
+            } else {
+                const { data: student } = await supabase
+                    .from('students')
+                    .select('class_id')
+                    .eq('id', studentId)
+                    .single();
+
+                const { data: classFee } = student?.class_id
+                    ? await supabase
+                          .from('fees')
+                          .select('amount, due_date')
+                          .eq('school_id', schoolId)
+                          .eq('class_id', student.class_id)
+                          .eq('is_active', true)
+                          .maybeSingle()
+                    : { data: null };
+
+                const { data: paid } = await supabase
+                    .from('payments')
+                    .select('amount')
+                    .eq('school_id', schoolId)
+                    .eq('student_id', studentId)
+                    .eq('status', 'completed');
+
+                const expected = Number(classFee?.amount ?? 0);
+                const paidTotal = (paid ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
+                const balance = expected - paidTotal;
+
+                if (expected > 0 && balance > 0) {
+                    const ratio = balance / expected;
+                    if (ratio >= 0.9) return 90;
+                    if (ratio >= 0.5) return 60;
+                    if (ratio >= 0.25) return 35;
+                    return 15;
+                }
                 return 0;
             }
 
-            let maxDaysOverdue = 0;
-
-            for (const obligation of obligations) {
-                const dueDate = new Date(obligation.due_date);
-                const today = new Date();
-                const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-
-                if (daysOverdue > maxDaysOverdue) {
-                    maxDaysOverdue = daysOverdue;
-                }
-            }
-
-            let risk = 0;
-
-            if (maxDaysOverdue >= 90) {
-                risk = 95; // Critical
-            } else if (maxDaysOverdue >= 60) {
-                risk = 80; // High
-            } else if (maxDaysOverdue >= 30) {
-                risk = 50; // Medium
-            } else if (maxDaysOverdue >= 7) {
-                risk = 25; // Low-medium
-            }
-
-            return risk;
+            if (maxDaysOverdue >= 90) return 95;
+            if (maxDaysOverdue >= 60) return 80;
+            if (maxDaysOverdue >= 30) return 50;
+            if (maxDaysOverdue >= 7) return 25;
+            return 0;
         } catch (error) {
             console.error('[RISK_DETECTION] Error assessing fee risk:', error);
             return 0;
@@ -452,7 +491,7 @@ export const riskDetectionService = {
     /**
      * Trigger alerts based on risk assessment
      */
-    private async triggerAlerts(
+    async triggerAlerts(
         schoolId: string,
         studentId: string,
         assessment: RiskAssessment,
@@ -555,7 +594,7 @@ export const riskDetectionService = {
     /**
      * Get consecutive absences count
      */
-    private getConsecutiveAbsences(records: any[]): number {
+    getConsecutiveAbsences(records: any[]): number {
         // Sort by date
         const sorted = records.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -577,7 +616,7 @@ export const riskDetectionService = {
     /**
      * Map risk score database data
      */
-    private mapRiskScoreData(data: any): RiskScore {
+    mapRiskScoreData(data: any): RiskScore {
         return {
             id: data.id,
             schoolId: data.school_id,
@@ -625,16 +664,46 @@ export const riskDetectionService = {
     /**
      * Get all high-risk students in school
      */
+    async recalculateForStudent(schoolId: string, studentId: string): Promise<RiskScore | null> {
+        const session = await getCurrentSession(schoolId);
+        if (!session) {
+            console.warn('[RISK_DETECTION] No active session for school', schoolId);
+            return null;
+        }
+        const term = await getCurrentTerm(schoolId);
+        return this.calculateStudentRiskScore(schoolId, studentId, session.id, term?.id);
+    },
+
+    async recalculateSchool(schoolId: string): Promise<{ processed: number; errors: number }> {
+        const { data: students } = await supabase
+            .from('students')
+            .select('id')
+            .eq('school_id', schoolId)
+            .eq('status', 'active');
+
+        let processed = 0;
+        let errors = 0;
+        for (const s of students ?? []) {
+            const result = await this.recalculateForStudent(schoolId, s.id);
+            if (result) processed++;
+            else errors++;
+        }
+        return { processed, errors };
+    },
+
     async getHighRiskStudents(
         schoolId: string,
         riskLevel: 'medium' | 'high' | 'critical' = 'high'
     ): Promise<RiskScore[]> {
         try {
+            const levels =
+                riskLevel === 'high' ? ['high', 'critical'] : riskLevel === 'medium' ? ['medium', 'high', 'critical'] : [riskLevel];
+
             const { data, error } = await supabase
                 .from('risk_scores')
                 .select('*')
                 .eq('school_id', schoolId)
-                .eq('risk_level', riskLevel)
+                .in('risk_level', levels)
                 .order('overall_risk', { ascending: false })
                 .order('created_at', { ascending: false });
 
