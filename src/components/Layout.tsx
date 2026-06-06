@@ -120,8 +120,9 @@ export default function Layout() {
   const { user, darkMode, toggleDarkMode, sidebarOpen, toggleSidebar, logout, school, isAuthenticated } = useAppStore();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showWelcome, setShowWelcome] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const { hasFeature, loading: featuresLoading } = useFeatureAccess();
   const allNavItems = user ? roleNavMap[user.role] || [] : [];
@@ -163,6 +164,7 @@ export default function Layout() {
   const handleLogout = () => {
     setHasShownWelcome(false);
     setShowWelcome(false);
+    setChatOpen(false);
     sessionStorage.removeItem('edupulse-notification-session');
     logout();
     navigate('/');
@@ -328,11 +330,16 @@ export default function Layout() {
       </div>
 
       {/* Floating Chatbot */}
-      <ChatBot onShowWelcome={() => setShowWelcome(true)} />
+      <ChatBot
+        onOpenChange={(open) => {
+          setChatOpen(open);
+          if (open) setShowWelcome(false);
+        }}
+      />
 
       {/* Welcome Message */}
       <WelcomeMessage
-        isVisible={showWelcome}
+        isVisible={showWelcome && !chatOpen}
         onDismiss={() => setShowWelcome(false)}
       />
     </div>

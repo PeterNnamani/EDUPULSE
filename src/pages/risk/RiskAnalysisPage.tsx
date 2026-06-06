@@ -376,7 +376,7 @@ export default function RiskAnalysisPage() {
           <div>
             <h3 className="font-semibold mb-2">About the Risk Analysis Engine</h3>
             <p className="text-sm text-secondary-text">
-              EduPulse analyzes attendance patterns, academic performance, behaviour records, assignment completion, and fee payment history to identify students at risk. Each factor is weighted and combined to produce an overall risk score from 0-100.
+              EduPulse does not only identify students who are struggling; it helps schools intervene early through counselor workflows, behaviour tracking, parent notifications, and risk-based monitoring. Attendance, academics, behaviour, assignments, and fees are weighted into a 0–100 score so staff can act before problems escalate.
             </p>
           </div>
         </div>

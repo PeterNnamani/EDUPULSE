@@ -6,10 +6,10 @@ import { sendChatMessage } from '@/services/chatService';
 import type { ChatMessage } from '@/types';
 
 interface ChatBotProps {
-    onShowWelcome?: () => void;
+    onOpenChange?: (open: boolean) => void;
 }
 
-export default function ChatBot({ onShowWelcome }: ChatBotProps) {
+export default function ChatBot({ onOpenChange }: ChatBotProps) {
     const { user, isAuthenticated } = useAppStore();
     const [isOpen, setIsOpen] = useState(false);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -44,6 +44,19 @@ export default function ChatBot({ onShowWelcome }: ChatBotProps) {
             const response = await sendChatMessage(inputValue, {
                 userId: user.id,
                 userRole: user.role,
+                userName: user.fullName || user.name || 'User',
+                schoolId: user.schoolId,
+                staffId: user.staffId ?? user.id,
+                children: user.children?.map((c) => ({
+                    id: c.id,
+                    firstName: c.firstName,
+                    lastName: c.lastName,
+                    className: c.className,
+                })),
+                conversationHistory: messages.map((m) => ({
+                    role: m.role,
+                    content: m.content,
+                })),
             });
 
             const botMessage: ChatMessage = {
@@ -90,7 +103,10 @@ export default function ChatBot({ onShowWelcome }: ChatBotProps) {
                                 <p className="text-sm text-blue-100">Always here to help</p>
                             </div>
                             <button
-                                onClick={() => setIsOpen(false)}
+                                onClick={() => {
+                                    setIsOpen(false);
+                                    onOpenChange?.(false);
+                                }}
                                 className="p-1 hover:bg-blue-700 rounded-lg transition-colors"
                             >
                                 <X className="w-5 h-5" />
@@ -102,8 +118,8 @@ export default function ChatBot({ onShowWelcome }: ChatBotProps) {
                             {messages.length === 0 ? (
                                 <div className="h-full flex flex-col items-center justify-center text-center">
                                     <MessageCircle className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
-                                    <p className="text-gray-500 dark:text-gray-400">
-                                        Hi {(user?.fullName || user?.name || '').split(' ')[0] || 'there'}! I'm your personal assistant. Ask me anything about your account or tasks.
+                                    <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
+                                        Hello, {(user?.fullName || user?.name || 'there').trim()}! Ask about your classes, activities, lesson notes, or any data in your account.
                                     </p>
                                 </div>
                             ) : (
@@ -175,7 +191,7 @@ export default function ChatBot({ onShowWelcome }: ChatBotProps) {
             <motion.button
                 onClick={() => {
                     setIsOpen(true);
-                    onShowWelcome?.();
+                    onOpenChange?.(true);
                 }}
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.95 }}
