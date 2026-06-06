@@ -370,8 +370,8 @@ export default function RiskAnalysisPage() {
         className="card bg-secondary-bg dark:bg-dark-card"
       >
         <div className="flex items-start gap-4">
-          <div className="p-3 rounded-xl bg-black dark:bg-white">
-            <Activity className="w-6 h-6 text-white dark:text-black" />
+          <div className="icon-box">
+            <Activity className="w-6 h-6 icon-soft" />
           </div>
           <div>
             <h3 className="font-semibold mb-2">About the Risk Analysis Engine</h3>

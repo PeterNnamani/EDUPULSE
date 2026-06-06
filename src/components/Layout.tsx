@@ -172,17 +172,17 @@ export default function Layout() {
 
   return (
     <InAppNotificationProvider>
-    <div className={`h-screen flex flex-col bg-white dark:bg-black ${darkMode ? 'dark' : ''}`}>
+    <div className={`h-screen flex flex-col bg-white dark:bg-dark-bg ${darkMode ? 'dark' : ''}`}>
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-dark-bg border-b border-border dark:border-gray-800 z-50 px-4">
+      <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-dark-bg border-b border-border dark:border-dark-border z-50 px-4">
         <div className="h-full flex items-center justify-between">
-          <button onClick={toggleSidebar} className="p-2">
+          <button onClick={toggleSidebar} className="p-2 rounded-lg text-secondary-text dark:text-dark-icon hover:bg-secondary-bg dark:hover:bg-dark-elevated">
             {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
-          <h1 className="font-semibold text-lg">EduPulse</h1>
+          <h1 className="font-semibold text-lg dark:text-dark-text">EduPulse</h1>
           <div className="flex items-center gap-2">
             <NotificationBell />
-            <button onClick={toggleDarkMode} className="p-2">
+            <button onClick={toggleDarkMode} className="p-2 rounded-lg text-secondary-text dark:text-dark-icon hover:bg-secondary-bg dark:hover:bg-dark-elevated">
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
             </button>
           </div>
@@ -203,20 +203,20 @@ export default function Layout() {
         <motion.aside
           initial={false}
           animate={{ x: sidebarOpen ? 0 : '-100%' }}
-          className={`fixed lg:static top-16 lg:top-0 left-0 h-[calc(100vh-4rem)] lg:h-full w-72 lg:w-64 bg-white dark:bg-dark-bg border-r border-border dark:border-gray-800 z-50 lg:z-0 lg:translate-x-0 transition-transform`}
+          className={`fixed lg:static top-16 lg:top-0 left-0 h-[calc(100vh-4rem)] lg:h-full w-72 lg:w-64 bg-white dark:bg-dark-bg border-r border-border dark:border-dark-border z-50 lg:z-0 lg:translate-x-0 transition-transform`}
         >
           <div className="h-full flex flex-col">
             {/* Logo */}
-            <div className="h-16 lg:h-20 flex items-center justify-between px-6 border-b border-border dark:border-gray-800">
+            <div className="h-16 lg:h-20 flex items-center justify-between px-6 border-b border-border dark:border-dark-border">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-black dark:bg-white flex items-center justify-center">
-                  <span className="text-white dark:text-black font-bold text-sm">E</span>
+                <div className="w-8 h-8 rounded-lg bg-black dark:bg-dark-elevated dark:border dark:border-dark-border flex items-center justify-center">
+                  <span className="text-white dark:text-dark-text font-bold text-sm">E</span>
                 </div>
-                <span className="font-bold text-xl text-black dark:text-white">EduPulse</span>
+                <span className="font-bold text-xl text-black dark:text-dark-text">EduPulse</span>
               </div>
               <button
                 onClick={toggleDarkMode}
-                className="hidden lg:block p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors"
+                className="hidden lg:block p-2 rounded-lg text-secondary-text dark:text-dark-icon hover:bg-secondary-bg dark:hover:bg-dark-elevated transition-colors"
               >
                 {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
@@ -224,7 +224,7 @@ export default function Layout() {
 
             {/* School Info */}
             {school.currentSchool && (
-              <div className="px-4 py-3 border-b border-border dark:border-gray-800">
+              <div className="px-4 py-3 border-b border-border dark:border-dark-border">
                 <p className="text-xs text-secondary-text">School</p>
                 <p className="font-medium text-sm truncate">{school.currentSchool.name}</p>
               </div>
@@ -250,12 +250,12 @@ export default function Layout() {
             </nav>
 
             {/* Settings & Logout */}
-            <div className="p-4 border-t border-border dark:border-gray-800 space-y-1">
+            <div className="p-4 border-t border-border dark:border-dark-border space-y-1">
               <Link to="/settings" className="sidebar-item">
                 <Settings className="w-5 h-5" />
                 <span>Settings</span>
               </Link>
-              <button onClick={handleLogout} className="sidebar-item w-full text-left text-red-500 hover:text-red-600">
+              <button onClick={handleLogout} className="sidebar-item w-full text-left text-red-500 dark:text-red-400/90 hover:text-red-600 dark:hover:text-red-300">
                 <LogOut className="w-5 h-5" />
                 <span>Logout</span>
               </button>
@@ -266,9 +266,9 @@ export default function Layout() {
         {/* Main Content */}
         <main className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-dark-bg">
           {/* Top Bar */}
-          <header className="hidden lg:flex h-16 items-center justify-between px-6 border-b border-border dark:border-gray-800 bg-white dark:bg-dark-bg flex-shrink-0">
+          <header className="hidden lg:flex h-16 items-center justify-between px-6 border-b border-border dark:border-dark-border bg-white dark:bg-dark-bg flex-shrink-0">
             <div className="flex items-center gap-4">
-              <h2 className="text-lg font-medium">
+              <h2 className="text-lg font-medium dark:text-dark-text">
                 {navItems.find((item) => item.path === location.pathname)?.label || 'Dashboard'}
               </h2>
             </div>
@@ -281,9 +281,9 @@ export default function Layout() {
               <div className="relative">
                 <button
                   onClick={() => setShowProfileMenu(!showProfileMenu)}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors"
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-elevated transition-colors"
                 >
-                  <div className="w-8 h-8 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-full bg-secondary-bg dark:bg-dark-elevated dark:border dark:border-dark-border flex items-center justify-center">
                     <span className="font-medium text-sm">
                       {user?.fullName?.charAt(0).toUpperCase() || 'U'}
                     </span>
@@ -299,11 +299,11 @@ export default function Layout() {
                   <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="absolute right-0 top-14 w-48 bg-white dark:bg-dark-card border border-border dark:border-gray-800 rounded-xl shadow-elevated z-50 overflow-hidden"
+                    className="absolute right-0 top-14 w-48 bg-white dark:bg-dark-card border border-border dark:border-dark-border rounded-xl shadow-elevated dark:shadow-dark-elevated z-50 overflow-hidden"
                   >
                     <Link
                       to="/settings"
-                      className="flex items-center gap-2 px-4 py-3 hover:bg-secondary-bg dark:hover:bg-gray-800 transition-colors"
+                      className="flex items-center gap-2 px-4 py-3 hover:bg-secondary-bg dark:hover:bg-dark-elevated transition-colors dark:text-dark-text"
                       onClick={() => setShowProfileMenu(false)}
                     >
                       <Settings className="w-4 h-4" />
@@ -311,7 +311,7 @@ export default function Layout() {
                     </Link>
                     <button
                       onClick={handleLogout}
-                      className="w-full flex items-center gap-2 px-4 py-3 hover:bg-secondary-bg dark:hover:bg-gray-800 transition-colors text-red-500"
+                      className="w-full flex items-center gap-2 px-4 py-3 hover:bg-secondary-bg dark:hover:bg-dark-elevated transition-colors text-red-500 dark:text-red-400"
                     >
                       <LogOut className="w-4 h-4" />
                       <span className="text-sm">Logout</span>

@@ -10,16 +10,23 @@ export default {
       colors: {
         primary: {
           bg: '#FFFFFF',
-          text: '#000000',
+          text: '#111827',
         },
         secondary: {
           bg: '#F5F5F5',
           text: '#6B7280',
         },
         dark: {
-          bg: '#000000',
-          card: '#111111',
+          bg: '#111318',
+          card: '#1a1f28',
+          elevated: '#232a35',
+          border: '#2d3548',
+          text: '#e8ecf1',
+          muted: '#9aa3b2',
+          subtle: '#6b7585',
+          icon: '#a8b0be',
         },
+        'darker-bg': '#0d1017',
         border: '#E5E7EB',
         card: '#FFFFFF',
         functional: {
@@ -45,6 +52,8 @@ export default {
         'soft': '0 2px 8px rgba(0, 0, 0, 0.04)',
         'card': '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06)',
         'elevated': '0 4px 12px rgba(0, 0, 0, 0.08)',
+        'dark-card': '0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 16px rgba(0, 0, 0, 0.2)',
+        'dark-elevated': '0 8px 24px rgba(0, 0, 0, 0.4)',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',

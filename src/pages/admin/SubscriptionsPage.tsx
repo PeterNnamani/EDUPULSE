@@ -279,7 +279,7 @@ export default function SubscriptionsPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card bg-gradient-to-br from-gray-900 to-black dark:from-gray-100 dark:to-white text-white dark:text-black"
+        className="card card-hero"
       >
         <div className="flex items-center justify-between">
           <div>
@@ -329,7 +329,7 @@ export default function SubscriptionsPage() {
             type="button"
             onClick={() => setBillingChoice('monthly')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              billingChoice === 'monthly' ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-secondary-text'
+              billingChoice === 'monthly' ? 'pill-active' : 'text-secondary-text'
             }`}
           >
             Monthly
@@ -338,7 +338,7 @@ export default function SubscriptionsPage() {
             type="button"
             onClick={() => setBillingChoice('annual')}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              billingChoice === 'annual' ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-secondary-text'
+              billingChoice === 'annual' ? 'pill-active' : 'text-secondary-text'
             }`}
           >
             Annual <span className="text-green-500">save up to 17%</span>
@@ -362,7 +362,7 @@ export default function SubscriptionsPage() {
             >
               {plan.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <span className="bg-black dark:bg-white text-white dark:text-black px-3 py-1 rounded-full text-xs font-medium">
+                  <span className="pill-active px-3 py-1 rounded-full text-xs font-medium">
                     Most Popular
                   </span>
                 </div>
@@ -397,7 +397,7 @@ export default function SubscriptionsPage() {
                   isActivePlan
                     ? 'bg-secondary-bg dark:bg-dark-card text-secondary-text border border-green-200/70 dark:border-green-900/50 cursor-default'
                     : plan.popular
-                      ? 'bg-black dark:bg-white text-white dark:text-black hover:opacity-90'
+                      ? 'pill-active hover:opacity-90'
                       : 'border border-black/20 dark:border-white/20 hover:bg-black/5 dark:hover:bg-white/5'
                 } ${processing === plan.name || !paystackReady ? 'opacity-50 cursor-not-allowed' : ''}`}
               >

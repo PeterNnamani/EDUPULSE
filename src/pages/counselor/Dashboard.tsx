@@ -202,7 +202,7 @@ export default function CounselorDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card bg-gradient-to-br from-gray-900 to-black dark:from-gray-100 dark:to-white text-white dark:text-black"
+        className="card card-hero"
       >
         <div className="flex items-center justify-between">
           <div>
@@ -223,10 +223,10 @@ export default function CounselorDashboard() {
       {/* Quick Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Open Cases', value: openCases.length, icon: FileText, color: 'bg-blue-100 dark:bg-blue-900/30' },
-          { label: 'Critical Risk', value: riskStats[0]?.value || 0, icon: AlertTriangle, color: 'bg-red-100 dark:bg-red-900/30', isAlert: true },
-          { label: 'Meetings Today', value: upcomingMeetings.length, icon: Calendar, color: 'bg-purple-100 dark:bg-purple-900/30' },
-          { label: 'High Risk', value: riskStats[1]?.value || 0, icon: Users, color: 'bg-orange-100 dark:bg-orange-900/30' },
+          { label: 'Open Cases', value: openCases.length, icon: FileText, tint: 'blue' as const },
+          { label: 'Critical Risk', value: riskStats[0]?.value || 0, icon: AlertTriangle, tint: 'red' as const, isAlert: true },
+          { label: 'Meetings Today', value: upcomingMeetings.length, icon: Calendar, tint: 'purple' as const },
+          { label: 'High Risk', value: riskStats[1]?.value || 0, icon: Users, tint: 'orange' as const },
         ].map((stat, index) => {
           const Icon = stat.icon;
           return (
@@ -238,8 +238,8 @@ export default function CounselorDashboard() {
               className={`card ${stat.isAlert ? 'border-red-200 dark:border-red-900' : ''}`}
             >
               <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-xl ${stat.color}`}>
-                  <Icon className={`w-5 h-5 ${stat.isAlert ? 'text-red-600 dark:text-red-400' : 'text-black dark:text-white'}`} />
+                <div className={`dashboard-icon-box icon-tint-${stat.tint}`}>
+                  <Icon className={`dashboard-icon icon-color-${stat.tint}`} />
                 </div>
                 <div>
                   <p className="stat-label text-xs">{stat.label}</p>
@@ -442,20 +442,20 @@ export default function CounselorDashboard() {
       >
         <h3 className="font-semibold mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button onClick={() => navigate('/interventions?new=1')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
-            <UserX className="w-6 h-6" />
+          <button onClick={() => navigate('/interventions?new=1')} className="quick-action-btn">
+            <UserX className="quick-action-icon icon-color-red" />
             <span className="text-sm font-medium">New Case</span>
           </button>
-          <button onClick={() => navigate('/interventions')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
-            <Calendar className="w-6 h-6" />
+          <button onClick={() => navigate('/interventions')} className="quick-action-btn">
+            <Calendar className="quick-action-icon icon-color-purple" />
             <span className="text-sm font-medium">Schedule Meeting</span>
           </button>
-          <button onClick={() => navigate('/interventions')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
-            <MessageSquare className="w-6 h-6" />
+          <button onClick={() => navigate('/interventions')} className="quick-action-btn">
+            <MessageSquare className="quick-action-icon icon-color-blue" />
             <span className="text-sm font-medium">Contact Parent</span>
           </button>
-          <button onClick={() => navigate('/interventions')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
-            <CheckCircle className="w-6 h-6" />
+          <button onClick={() => navigate('/interventions')} className="quick-action-btn">
+            <CheckCircle className="quick-action-icon icon-color-green" />
             <span className="text-sm font-medium">Close Case</span>
           </button>
         </div>

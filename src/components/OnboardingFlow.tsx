@@ -115,7 +115,7 @@ export default function OnboardingFlow() {
   const Icon = slide.icon;
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black flex flex-col items-center justify-center p-8">
+    <div className="min-h-screen bg-white dark:bg-dark-bg flex flex-col items-center justify-center p-8">
       <div className="max-w-md w-full">
         <AnimatePresence mode="wait">
           <motion.div

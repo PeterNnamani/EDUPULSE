@@ -122,7 +122,7 @@ export default function PrincipalDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card bg-gradient-to-br from-gray-900 to-black dark:from-gray-100 dark:to-white text-white dark:text-black"
+        className="card card-hero"
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -147,7 +147,7 @@ export default function PrincipalDashboard() {
             <button
               type="button"
               onClick={loadDashboard}
-              className="p-2 rounded-lg bg-white/10 dark:bg-black/10 hover:bg-white/20 transition-colors"
+              className="p-2 rounded-lg bg-white/10 dark:bg-dark-elevated/80 hover:bg-white/20 dark:hover:bg-dark-elevated transition-colors"
               title="Refresh"
             >
               <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
@@ -175,10 +175,10 @@ export default function PrincipalDashboard() {
             >
               <div className="flex items-center justify-between mb-2">
                 <div
-                  className={`p-2 rounded-lg ${metric.isAlert ? 'bg-yellow-100 dark:bg-yellow-900/30' : 'bg-secondary-bg dark:bg-dark-card'}`}
+                  className={`dashboard-icon-box-sm ${metric.isAlert ? 'icon-tint-amber' : 'icon-tint-blue'}`}
                 >
                   <Icon
-                    className={`w-4 h-4 ${metric.isAlert ? 'text-yellow-600 dark:text-yellow-400' : 'text-black dark:text-white'}`}
+                    className={`dashboard-icon-sm ${metric.isAlert ? 'dashboard-icon-alert' : 'icon-color-blue'}`}
                   />
                 </div>
                 <span className="text-xs font-medium text-secondary-text truncate max-w-[80px]">
@@ -220,7 +220,7 @@ export default function PrincipalDashboard() {
               </div>
               <div className="flex justify-center gap-6 mt-2">
                 <LegendDot color="bg-green-500" label="Attendance" />
-                <LegendDot color="bg-black dark:bg-white" label="Performance" />
+                <LegendDot color="bg-black dark:bg-slate-500" label="Performance" />
                 <LegendDot color="bg-gray-400" label="Behaviour" />
               </div>
             </>
@@ -308,7 +308,7 @@ export default function PrincipalDashboard() {
                   </div>
                   <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-black dark:bg-white rounded-full transition-all"
+                      className="h-full accent-bar transition-all"
                       style={{ width: `${subject.score}%` }}
                     />
                   </div>

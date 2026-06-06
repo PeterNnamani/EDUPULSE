@@ -96,7 +96,7 @@ export default function FinanceDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card bg-gradient-to-br from-gray-900 to-black dark:from-gray-100 dark:to-white text-white dark:text-black"
+        className="card card-hero"
       >
         <div className="flex items-center justify-between">
           <div>
@@ -133,10 +133,10 @@ export default function FinanceDashboard() {
             >
               <div className="flex items-center justify-between mb-2">
                 <div
-                  className={`p-2.5 rounded-xl ${metric.isAlert ? 'bg-yellow-100 dark:bg-yellow-900/30' : 'bg-secondary-bg dark:bg-dark-card'}`}
+                  className={`dashboard-icon-box ${metric.isAlert ? 'icon-tint-amber' : 'icon-tint-green'}`}
                 >
                   <Icon
-                    className={`w-5 h-5 ${metric.isAlert ? 'text-yellow-600 dark:text-yellow-400' : 'text-black dark:text-white'}`}
+                    className={`dashboard-icon ${metric.isAlert ? 'dashboard-icon-alert' : 'icon-color-green'}`}
                   />
                 </div>
                 <span className="text-xs font-medium text-secondary-text">{metric.change}</span>
@@ -253,33 +253,33 @@ export default function FinanceDashboard() {
           <button
             type="button"
             onClick={() => navigate('/fees', { state: { openPayment: true } })}
-            className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2"
+            className="quick-action-btn"
           >
-            <DollarSign className="w-6 h-6" />
+            <DollarSign className="quick-action-icon icon-color-green" />
             <span className="text-sm font-medium">Record Payment</span>
           </button>
           <button
             type="button"
             onClick={() => navigate('/fees')}
-            className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2"
+            className="quick-action-btn"
           >
-            <FileText className="w-6 h-6" />
+            <FileText className="quick-action-icon icon-color-blue" />
             <span className="text-sm font-medium">Fee records</span>
           </button>
           <button
             type="button"
             onClick={() => navigate('/fees')}
-            className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2"
+            className="quick-action-btn"
           >
-            <Users className="w-6 h-6" />
+            <Users className="quick-action-icon icon-color-purple" />
             <span className="text-sm font-medium">Debtor list</span>
           </button>
           <button
             type="button"
             onClick={() => navigate('/reports')}
-            className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2"
+            className="quick-action-btn"
           >
-            <TrendingUp className="w-6 h-6" />
+            <TrendingUp className="quick-action-icon icon-color-indigo" />
             <span className="text-sm font-medium">Reports</span>
           </button>
         </div>

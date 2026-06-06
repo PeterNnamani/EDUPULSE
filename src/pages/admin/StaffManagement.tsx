@@ -610,7 +610,7 @@ export default function StaffManagement() {
                       {staff.pin && (
                         <div className="mt-1 p-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-800">
                           <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex-1 bg-white dark:bg-black/30 rounded px-1.5 py-0.5 font-mono font-bold text-xs tracking-wider">
+                            <div className="flex-1 bg-white dark:bg-dark-elevated/60 rounded px-1.5 py-0.5 font-mono font-bold text-xs tracking-wider">
                               {visiblePins.has(staff.id) ? staff.pin : '••••••'}
                             </div>
                             <button
@@ -796,7 +796,7 @@ export default function StaffManagement() {
                   <div>
                     <label className="label text-xs mb-2 block">Staff ID</label>
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-white dark:bg-black/30 rounded-lg p-3 font-mono font-bold text-lg">
+                      <div className="flex-1 bg-white dark:bg-dark-elevated/60 rounded-lg p-3 font-mono font-bold text-lg">
                         {successData.staffId}
                       </div>
                       <button
@@ -816,7 +816,7 @@ export default function StaffManagement() {
                   <div>
                     <label className="label text-xs mb-2 block">Temporary PIN</label>
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-white dark:bg-black/30 rounded-lg p-3 font-mono font-bold text-lg tracking-widest">
+                      <div className="flex-1 bg-white dark:bg-dark-elevated/60 rounded-lg p-3 font-mono font-bold text-lg tracking-widest">
                         {successData.temporaryPin}
                       </div>
                       <button

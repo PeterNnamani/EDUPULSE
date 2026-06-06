@@ -177,7 +177,7 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
         ref={bellButtonRef}
         type="button"
         onClick={() => setShowPanel((open) => !open)}
-        className="relative p-2 text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+        className="relative p-2 text-gray-700 dark:text-dark-icon hover:text-gray-900 dark:hover:text-dark-text hover:bg-gray-100 dark:hover:bg-dark-elevated rounded-lg transition-colors"
         title="Notifications"
         aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}
         aria-expanded={showPanel}
@@ -208,10 +208,10 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -8 }}
             transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-            className="absolute right-0 mt-2 w-96 max-h-[600px] bg-white dark:bg-dark-card rounded-lg shadow-xl z-50 flex flex-col border border-border dark:border-gray-800"
+            className="absolute right-0 mt-2 w-96 max-h-[600px] bg-white dark:bg-dark-card rounded-lg shadow-xl dark:shadow-dark-elevated z-50 flex flex-col border border-border dark:border-dark-border"
           >
-            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-dark-border flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 dark:text-dark-text">Notifications</h3>
               <button
                 type="button"
                 onClick={closePanel}
@@ -230,7 +230,7 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
                   <p>No new notifications</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                <div className="divide-y divide-gray-200 dark:divide-dark-border">
                   {notifications.map((notification, index) => (
                     <NotificationRow
                       key={notification.id}
@@ -249,7 +249,7 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
               )}
             </div>
 
-            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-dark-border">
               <Link
                 to="/notifications"
                 onClick={closePanel}
@@ -290,13 +290,13 @@ function NotificationRow({
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.05 }}
-      className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${getPriorityColor(notification.priority)}`}
+      className={`p-4 hover:bg-gray-50 dark:hover:bg-dark-elevated/40 transition-colors ${getPriorityColor(notification.priority)}`}
     >
       <div className="flex items-start gap-3">
         <AlertTriangle className="w-5 h-5 flex-shrink-0 text-gray-500" />
         <div className="flex-1 min-w-0">
-          <h4 className="font-semibold text-gray-900 dark:text-white text-sm">{notification.title}</h4>
-          <p className="text-gray-700 dark:text-gray-300 text-sm mt-1">{notification.message}</p>
+          <h4 className="font-semibold text-gray-900 dark:text-dark-text text-sm">{notification.title}</h4>
+          <p className="text-gray-700 dark:text-dark-muted text-sm mt-1">{notification.message}</p>
           <div className="flex items-center gap-1 mt-2 text-xs text-gray-500">
             <Clock size={14} />
             {formatTime(notification.createdAt)}
@@ -313,7 +313,7 @@ function NotificationRow({
             <button
               type="button"
               onClick={() => onArchive(notification.id)}
-              className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded"
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-200 dark:bg-dark-elevated text-gray-700 dark:text-dark-muted rounded border dark:border-dark-border"
             >
               <Archive size={14} />
               Archive
@@ -353,7 +353,7 @@ function getPriorityColor(priority: string) {
     case 'medium':
       return 'border-l-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/10';
     default:
-      return 'border-l-4 border-gray-300 bg-gray-50 dark:bg-gray-800/30';
+      return 'border-l-4 border-gray-300 bg-gray-50 dark:bg-dark-elevated/30 dark:border-dark-border';
   }
 }
 

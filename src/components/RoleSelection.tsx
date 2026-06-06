@@ -55,7 +55,7 @@ export default function RoleSelection() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-black flex flex-col items-center justify-center p-8">
+    <div className="min-h-screen bg-white dark:bg-dark-bg flex flex-col items-center justify-center p-8">
       <div className="max-w-4xl w-full">
         <motion.div
           initial={{ opacity: 0, y: -20 }}

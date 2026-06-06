@@ -652,19 +652,19 @@ export default function AdminDashboard() {
   };
 
   const statCards = [
-    { label: 'Total Students', value: stats.totalStudents, icon: Users, change: stats.studentsChange },
-    { label: 'Total Staff', value: stats.totalStaff, icon: GraduationCap, change: stats.staffChange },
-    { label: 'Classes', value: stats.totalClasses, icon: Building, change: `${stats.avgStudentsPerClass} students avg` },
-    { label: 'Attendance Rate', value: `${stats.attendanceRate}%`, icon: CalendarDays, change: stats.attendanceChange, trend: 'up' },
-    { label: 'Average Grade', value: `${stats.averageGrade}%`, icon: ClipboardCheck, change: stats.gradeChange, trend: 'up' },
-    { label: 'High Risk', value: stats.highRiskStudents, icon: AlertTriangle, change: stats.highRiskChange, isAlert: true },
-    { label: 'Pending Fees', value: stats.pendingFeesCount, icon: DollarSign, change: `${stats.pendingFeesCount} students` },
-    { label: 'Interventions', value: stats.openInterventions, icon: TrendingUp, change: `${stats.urgentInterventions} urgent` },
+    { label: 'Total Students', value: stats.totalStudents, icon: Users, change: stats.studentsChange, tint: 'blue' as const },
+    { label: 'Total Staff', value: stats.totalStaff, icon: GraduationCap, change: stats.staffChange, tint: 'purple' as const },
+    { label: 'Classes', value: stats.totalClasses, icon: Building, change: `${stats.avgStudentsPerClass} students avg`, tint: 'indigo' as const },
+    { label: 'Attendance Rate', value: `${stats.attendanceRate}%`, icon: CalendarDays, change: stats.attendanceChange, trend: 'up', tint: 'green' as const },
+    { label: 'Average Grade', value: `${stats.averageGrade}%`, icon: ClipboardCheck, change: stats.gradeChange, trend: 'up', tint: 'green' as const },
+    { label: 'High Risk', value: stats.highRiskStudents, icon: AlertTriangle, change: stats.highRiskChange, isAlert: true, tint: 'red' as const },
+    { label: 'Pending Fees', value: stats.pendingFeesCount, icon: DollarSign, change: `${stats.pendingFeesCount} students`, tint: 'orange' as const },
+    { label: 'Interventions', value: stats.openInterventions, icon: TrendingUp, change: `${stats.urgentInterventions} urgent`, tint: 'blue' as const },
   ];
 
   return (
     <div className="space-y-6">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card bg-gradient-to-br from-gray-900 to-black text-white">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card card-hero">
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Left Section: Welcome & Info */}
           <div className="flex-1">
@@ -731,8 +731,8 @@ export default function AdminDashboard() {
           return (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }} className="card">
               <div className="flex items-start justify-between">
-                <div className="p-2.5 rounded-xl bg-secondary-bg">
-                  <Icon className="w-5 h-5" />
+                <div className={`dashboard-icon-box icon-tint-${stat.tint ?? 'blue'}`}>
+                  <Icon className={`dashboard-icon icon-color-${stat.tint ?? 'blue'}`} />
                 </div>
                 <span className="text-xs font-medium text-secondary-text">{stat.change}</span>
               </div>
@@ -790,20 +790,20 @@ export default function AdminDashboard() {
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="card">
           <h3 className="font-semibold mb-4">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => navigate('/admin/students')} className="p-4 rounded-xl bg-secondary-bg hover:bg-gray-200 text-left">
-              <Users className="w-5 h-5 mb-2" />
+            <button onClick={() => navigate('/admin/students')} className="quick-action-btn-inline">
+              <Users className="w-5 h-5 mb-2 icon-color-blue" />
               <p className="font-medium text-sm">Add Student</p>
             </button>
-            <button onClick={() => navigate('/admin/staff')} className="p-4 rounded-xl bg-secondary-bg hover:bg-gray-200 text-left">
-              <GraduationCap className="w-5 h-5 mb-2" />
+            <button onClick={() => navigate('/admin/staff')} className="quick-action-btn-inline">
+              <GraduationCap className="w-5 h-5 mb-2 icon-color-purple" />
               <p className="font-medium text-sm">Add Staff</p>
             </button>
-            <button onClick={() => navigate('/attendance')} className="p-4 rounded-xl bg-secondary-bg hover:bg-gray-200 text-left">
-              <CalendarDays className="w-5 h-5 mb-2" />
+            <button onClick={() => navigate('/attendance')} className="quick-action-btn-inline">
+              <CalendarDays className="w-5 h-5 mb-2 icon-color-green" />
               <p className="font-medium text-sm">Attendance</p>
             </button>
-            <button onClick={() => navigate('/admin/subscriptions')} className="p-4 rounded-xl bg-secondary-bg hover:bg-gray-200 text-left">
-              <DollarSign className="w-5 h-5 mb-2" />
+            <button onClick={() => navigate('/admin/subscriptions')} className="quick-action-btn-inline">
+              <DollarSign className="w-5 h-5 mb-2 icon-color-orange" />
               <p className="font-medium text-sm">Plans</p>
             </button>
           </div>

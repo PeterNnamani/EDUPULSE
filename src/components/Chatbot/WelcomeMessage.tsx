@@ -48,11 +48,11 @@ export default function WelcomeMessage({ isVisible, onDismiss }: WelcomeMessageP
                     className="fixed bottom-28 right-6 z-40"
                 >
                     <motion.div
-                        className="max-w-sm bg-white dark:bg-dark-bg rounded-2xl rounded-br-none shadow-xl p-4 border border-border dark:border-gray-800"
+                        className="max-w-sm bg-white dark:bg-dark-card rounded-2xl rounded-br-none shadow-xl dark:shadow-dark-elevated p-4 border border-border dark:border-dark-border"
                         initial={{ scale: 0.95 }}
                         animate={{ scale: 1 }}
                     >
-                        <p className="text-gray-800 dark:text-gray-100 text-sm leading-relaxed">
+                        <p className="text-gray-800 dark:text-dark-text text-sm leading-relaxed">
                             {message}
                         </p>
                     </motion.div>

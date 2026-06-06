@@ -323,7 +323,7 @@ export default function ParentDashboard() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="card bg-gradient-to-br from-gray-900 to-black dark:from-gray-100 dark:to-white text-white dark:text-black"
+          className="card card-hero"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -356,7 +356,7 @@ export default function ParentDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card bg-gradient-to-br from-gray-900 to-black dark:from-gray-100 dark:to-white text-white dark:text-black"
+        className="card card-hero"
       >
         <div className="flex items-center justify-between">
           <div>
@@ -437,7 +437,7 @@ export default function ParentDashboard() {
               className="card"
             >
               <div className="flex items-center gap-3 mb-2">
-                <CalendarDays className="w-5 h-5 text-blue-600" />
+                <CalendarDays className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <span className="text-sm text-secondary-text">Attendance</span>
               </div>
               <p className="text-3xl font-bold">{stats.attendance.percentage}%</p>
@@ -455,7 +455,7 @@ export default function ParentDashboard() {
               className="card"
             >
               <div className="flex items-center gap-3 mb-2">
-                <TrendingUp className="w-5 h-5 text-green-600" />
+                <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />
                 <span className="text-sm text-secondary-text">Average Grade</span>
               </div>
               <p className="text-3xl font-bold">{stats.averageGrade}%</p>
@@ -471,7 +471,7 @@ export default function ParentDashboard() {
               className="card"
             >
               <div className="flex items-center gap-3 mb-2">
-                <ClipboardList className="w-5 h-5 text-purple-600" />
+                <ClipboardList className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 <span className="text-sm text-secondary-text">Assignments</span>
               </div>
               <p className="text-3xl font-bold">{stats.assignments.completed}/{stats.assignments.total}</p>
@@ -485,7 +485,7 @@ export default function ParentDashboard() {
               className="card"
             >
               <div className="flex items-center gap-3 mb-2">
-                <AlertTriangle className="w-5 h-5 text-orange-600" />
+                <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                 <span className="text-sm text-secondary-text">Risk Level</span>
               </div>
               <p className={`text-2xl font-bold capitalize ${stats.riskLevel === 'low' ? 'text-green-600' : stats.riskLevel === 'medium' ? 'text-yellow-600' : stats.riskLevel === 'high' ? 'text-orange-600' : 'text-red-600'}`}>

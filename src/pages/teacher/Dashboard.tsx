@@ -164,8 +164,8 @@ export default function TeacherDashboard() {
               className={`card ${stat.isAlert ? 'border-yellow-200 dark:border-yellow-900 bg-yellow-50 dark:bg-yellow-900/10' : ''}`}
             >
               <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-xl ${stat.isAlert ? 'bg-yellow-100 dark:bg-yellow-900/30' : 'bg-secondary-bg dark:bg-dark-card'}`}>
-                  <Icon className={`w-5 h-5 ${stat.isAlert ? 'text-yellow-600 dark:text-yellow-400' : 'text-black dark:text-white'}`} />
+                <div className={`dashboard-icon-box ${stat.isAlert ? 'icon-tint-amber' : 'icon-tint-blue'}`}>
+                  <Icon className={`dashboard-icon ${stat.isAlert ? 'dashboard-icon-alert' : 'icon-color-blue'}`} />
                 </div>
                 <div>
                   <p className="stat-label text-xs">{stat.label}</p>
@@ -205,7 +205,7 @@ export default function TeacherDashboard() {
                   <button
                     type="button"
                     onClick={() => navigate('/attendance')}
-                    className="p-2 rounded-lg bg-black dark:bg-white text-white dark:text-black text-sm font-medium hover:opacity-80 transition"
+                    className="p-2 rounded-lg pill-active text-sm font-medium hover:opacity-80 transition"
                   >
                     View Class
                   </button>
@@ -366,20 +366,20 @@ export default function TeacherDashboard() {
       >
         <h3 className="font-semibold mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button onClick={() => navigate('/attendance')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
-            <CalendarDays className="w-6 h-6" />
+          <button onClick={() => navigate('/attendance')} className="quick-action-btn">
+            <CalendarDays className="quick-action-icon icon-color-blue" />
             <span className="text-sm font-medium">Take Attendance</span>
           </button>
-          <button onClick={() => navigate('/grades')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
-            <ClipboardList className="w-6 h-6" />
+          <button onClick={() => navigate('/grades')} className="quick-action-btn">
+            <ClipboardList className="quick-action-icon icon-color-purple" />
             <span className="text-sm font-medium">Enter Grades</span>
           </button>
-          <button onClick={() => navigate('/assignments')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
-            <BookOpen className="w-6 h-6" />
+          <button onClick={() => navigate('/assignments')} className="quick-action-btn">
+            <BookOpen className="quick-action-icon icon-color-green" />
             <span className="text-sm font-medium">Create Assignment</span>
           </button>
-          <button onClick={() => navigate('/reports')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
-            <TrendingUp className="w-6 h-6" />
+          <button onClick={() => navigate('/reports')} className="quick-action-btn">
+            <TrendingUp className="quick-action-icon icon-color-indigo" />
             <span className="text-sm font-medium">View Reports</span>
           </button>
         </div>

@@ -50,7 +50,7 @@ export default function StudentUsageWidget() {
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-secondary-text" />
+          <Users className="w-5 h-5 icon-color-blue" />
           <h3 className="font-semibold">Student Usage</h3>
         </div>
         <span className="text-xs px-2 py-1 rounded-full bg-secondary-bg dark:bg-dark-card">{info.planName}</span>
