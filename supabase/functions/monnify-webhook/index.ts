@@ -50,20 +50,95 @@ async function monnifyAuth(cfg: MonnifyConfig): Promise<string | null> {
   return json?.responseBody?.accessToken ?? null;
 }
 
+async function syncAccountNameWithMonnify(
+  cfg: MonnifyConfig,
+  token: string,
+  accountReference: string,
+  accountName: string
+): Promise<boolean> {
+  const res = await fetch(
+    `${cfg.monnify_base_url}/api/v1/bank-transfer/reserved-accounts/${encodeURIComponent(accountReference)}/kyc-info`,
+    {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ accountName }),
+    }
+  );
+  const json = await res.json();
+  return !!(res.ok && json?.requestSuccessful);
+}
+
+async function syncStoredAccountName(
+  supabase: Supa,
+  schoolId: string,
+  studentId: string,
+  student: { first_name: string; last_name: string }
+): Promise<{ success: boolean; error?: string; account?: Record<string, unknown> }> {
+  const { data: row } = await supabase
+    .from("student_virtual_accounts")
+    .select("account_number, account_name, bank_name, reservation_reference")
+    .eq("school_id", schoolId)
+    .eq("student_id", studentId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (!row?.account_number) {
+    return { success: false, error: "No virtual account found for this student." };
+  }
+
+  const expectedName = `${student.first_name} ${student.last_name}`.trim();
+  if (row.account_name === expectedName) {
+    return { success: true, account: row };
+  }
+
+  const cfg = await getConfig(supabase, schoolId);
+  if (cfg) {
+    const token = await monnifyAuth(cfg);
+    if (token) {
+      const accountReference = buildAccountReference(schoolId, studentId);
+      await syncAccountNameWithMonnify(cfg, token, accountReference, expectedName);
+    }
+  }
+
+  const { data: updated, error } = await supabase
+    .from("student_virtual_accounts")
+    .update({ account_name: expectedName, updated_at: new Date().toISOString() })
+    .eq("school_id", schoolId)
+    .eq("student_id", studentId)
+    .eq("provider", "monnify")
+    .select("account_number, account_name, bank_name, reservation_reference")
+    .maybeSingle();
+
+  if (error) return { success: false, error: error.message };
+  return { success: true, account: updated ?? { ...row, account_name: expectedName } };
+}
+
 async function reserveAccount(
   supabase: Supa,
   schoolId: string,
   studentId: string
 ): Promise<{ success: boolean; error?: string; account?: Record<string, unknown> }> {
-  const cfg = await getConfig(supabase, schoolId);
-  if (!cfg) return { success: false, error: "Monnify is not configured for this school." };
-
   const { data: student } = await supabase
     .from("students")
     .select("first_name, last_name, student_id")
     .eq("id", studentId)
     .maybeSingle();
   if (!student) return { success: false, error: "Student not found." };
+
+  const { data: existingRow } = await supabase
+    .from("student_virtual_accounts")
+    .select("account_number, account_name, bank_name, reservation_reference")
+    .eq("school_id", schoolId)
+    .eq("student_id", studentId)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (existingRow?.account_number) {
+    return syncStoredAccountName(supabase, schoolId, studentId, student);
+  }
+
+  const cfg = await getConfig(supabase, schoolId);
+  if (!cfg) return { success: false, error: "Monnify is not configured for this school." };
 
   const token = await monnifyAuth(cfg);
   if (!token) return { success: false, error: "Monnify authentication failed." };
@@ -253,6 +328,19 @@ Deno.serve({ auth: false }, async (req: Request) => {
       const { schoolId, studentId } = body;
       if (!schoolId || !studentId) throw new Error("schoolId and studentId are required.");
       const result = await reserveAccount(supabase, schoolId, studentId);
+      return jsonResponse(req, result, result.success ? 200 : 400);
+    }
+
+    if (body?.action === "sync_account_name") {
+      const { schoolId, studentId } = body;
+      if (!schoolId || !studentId) throw new Error("schoolId and studentId are required.");
+      const { data: student } = await supabase
+        .from("students")
+        .select("first_name, last_name")
+        .eq("id", studentId)
+        .maybeSingle();
+      if (!student) throw new Error("Student not found.");
+      const result = await syncStoredAccountName(supabase, schoolId, studentId, student);
       return jsonResponse(req, result, result.success ? 200 : 400);
     }
 

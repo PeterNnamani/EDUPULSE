@@ -26,6 +26,105 @@ export interface StudentInvoice {
   }>;
 }
 
+export type StudentFeeStatus = 'no_fee' | 'paid' | 'partial' | 'unpaid';
+
+export function deriveStudentFeeStatus(invoice: Pick<StudentInvoice, 'totalDue' | 'totalPaid' | 'balance'>): StudentFeeStatus {
+  if (invoice.totalDue <= 0) return 'no_fee';
+  if (invoice.balance <= 0) return 'paid';
+  if (invoice.totalPaid > 0) return 'partial';
+  return 'unpaid';
+}
+
+export interface StudentFeeSummary {
+  totalDue: number;
+  totalPaid: number;
+  balance: number;
+  status: StudentFeeStatus;
+}
+
+export function formatFeeStatusDisplay(status: StudentFeeStatus): {
+  label: string;
+  tone: 'muted' | 'success' | 'warning' | 'danger';
+} {
+  switch (status) {
+    case 'paid':
+      return { label: 'Paid', tone: 'success' };
+    case 'partial':
+      return { label: 'Partial', tone: 'warning' };
+    case 'unpaid':
+      return { label: 'Unpaid', tone: 'danger' };
+    default:
+      return { label: 'No fee', tone: 'muted' };
+  }
+}
+
+export function feeStatusToneClass(tone: 'muted' | 'success' | 'warning' | 'danger'): string {
+  switch (tone) {
+    case 'success':
+      return 'text-green-600 dark:text-green-400';
+    case 'warning':
+      return 'text-yellow-600 dark:text-yellow-400';
+    case 'danger':
+      return 'text-red-600 dark:text-red-400';
+    default:
+      return 'text-secondary-text';
+  }
+}
+
+async function sumCompletedPayments(schoolId: string, studentId: string): Promise<number> {
+  const { data } = await supabase
+    .from('payments')
+    .select('amount')
+    .eq('school_id', schoolId)
+    .eq('student_id', studentId)
+    .eq('status', 'completed');
+  return (data ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+}
+
+async function resolveSessionId(schoolId: string): Promise<string | null> {
+  const { data: currentSession } = await supabase
+    .from('academic_sessions')
+    .select('id')
+    .eq('school_id', schoolId)
+    .eq('is_current', true)
+    .maybeSingle();
+  if (currentSession?.id) return currentSession.id;
+
+  const { data: latest } = await supabase
+    .from('academic_sessions')
+    .select('id')
+    .eq('school_id', schoolId)
+    .order('start_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return latest?.id ?? null;
+}
+
+async function resolveClassFeeDue(schoolId: string, classId: string): Promise<number> {
+  const sessionId = await resolveSessionId(schoolId);
+
+  const { data: structures } = await supabase
+    .from('fee_structures')
+    .select('amount, session_id')
+    .eq('school_id', schoolId)
+    .eq('class_id', classId)
+    .eq('is_active', true);
+
+  const fromStructures = (structures ?? [])
+    .filter((s) => !sessionId || !s.session_id || s.session_id === sessionId)
+    .reduce((sum, s) => sum + Number(s.amount ?? 0), 0);
+  if (fromStructures > 0) return fromStructures;
+
+  const { data: classFee } = await supabase
+    .from('fees')
+    .select('amount')
+    .eq('school_id', schoolId)
+    .eq('class_id', classId)
+    .eq('is_active', true)
+    .maybeSingle();
+  return Number(classFee?.amount ?? 0);
+}
+
 function generateInvoiceNumber(schoolId: string): string {
   const short = schoolId.slice(0, 6).toUpperCase();
   return `INV-${short}-${Date.now().toString(36).toUpperCase()}`;
@@ -232,6 +331,42 @@ export const feeAssignmentService = {
       balance: Math.max(0, totalDue - totalPaid),
       lineItems,
     };
+  },
+
+  /**
+   * Authoritative fee snapshot: obligations when present, else class fees;
+   * payments table for amount paid.
+   * Pass classId when known (e.g. parent login) — avoids a students lookup that
+   * may fail under RLS for anon parent/staff sessions.
+   */
+  async getStudentFeeSummary(
+    schoolId: string,
+    studentId: string,
+    options?: { classId?: string | null }
+  ): Promise<StudentFeeSummary> {
+    const invoice = await this.getStudentInvoice(schoolId, studentId);
+    let totalDue = invoice.totalDue;
+    const totalPaid = await sumCompletedPayments(schoolId, studentId);
+
+    if (totalDue <= 0) {
+      let classId = options?.classId ?? null;
+      if (!classId) {
+        const { data: student } = await supabase
+          .from('students')
+          .select('class_id')
+          .eq('id', studentId)
+          .eq('school_id', schoolId)
+          .maybeSingle();
+        classId = student?.class_id ?? null;
+      }
+      if (classId) {
+        totalDue = await resolveClassFeeDue(schoolId, classId);
+      }
+    }
+
+    const balance = Math.max(0, totalDue - totalPaid);
+    const status = deriveStudentFeeStatus({ totalDue, totalPaid, balance });
+    return { totalDue, totalPaid, balance, status };
   },
 
   /**

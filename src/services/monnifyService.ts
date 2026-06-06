@@ -84,16 +84,35 @@ export const monnifyService = {
   },
 
   /**
+   * Sync virtual account display name with the student's full legal name on Monnify + DB.
+   */
+  async syncVirtualAccountName(
+    schoolId: string,
+    studentId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { data, error } = await supabase.functions.invoke('monnify-webhook', {
+        body: { action: 'sync_account_name', schoolId, studentId },
+      });
+      if (error) return { success: false, error: error.message };
+      if (!data?.success) return { success: false, error: data?.error || 'Sync failed' };
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Failed to sync account name',
+      };
+    }
+  },
+
+  /**
    * Reserve a virtual account for a student via the Edge Function. Safe to call
-   * repeatedly - returns the existing account if one already exists.
+   * repeatedly - syncs the account name or creates the account if missing.
    */
   async ensureVirtualAccount(
     schoolId: string,
     studentId: string
   ): Promise<{ success: boolean; account?: VirtualAccount; error?: string }> {
-    const existing = await this.getVirtualAccount(schoolId, studentId);
-    if (existing?.accountNumber) return { success: true, account: existing };
-
     try {
       const { data, error } = await supabase.functions.invoke('monnify-webhook', {
         body: { action: 'reserve_account', schoolId, studentId },

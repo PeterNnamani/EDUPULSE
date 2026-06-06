@@ -56,8 +56,10 @@ export function useParentChildClasses(): Record<string, string> {
 }
 
 export function useSelectedChildClassName(): string | null {
-  const { selectedParentChildId } = useAppStore();
+  const { user, selectedParentChildId } = useAppStore();
   const classNames = useParentChildClasses();
   if (!selectedParentChildId) return null;
-  return classNames[selectedParentChildId] ?? null;
+  if (classNames[selectedParentChildId]) return classNames[selectedParentChildId];
+  const child = user?.children?.find((c) => c.id === selectedParentChildId);
+  return child?.className ?? null;
 }

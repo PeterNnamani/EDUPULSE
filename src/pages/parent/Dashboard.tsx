@@ -1,14 +1,21 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CalendarDays, ClipboardList, AlertTriangle, BookOpen, TrendingUp, ArrowRight, User, ChevronDown, Loader } from 'lucide-react';
+import { CalendarDays, ClipboardList, AlertTriangle, BookOpen, TrendingUp, ArrowRight, User, Loader } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
 import { getStudentAssignments } from '@/services/assignmentService';
 import VirtualAccountCard from '@/components/finance/VirtualAccountCard';
 import { formatDate, getInitials } from '@/utils/displayUtils';
-import { useParentChildClasses, useSelectedChildClassName } from '@/hooks/useParentChildClasses';
+import { useSelectedChildClassName } from '@/hooks/useParentChildClasses';
 import ParentChildClassBadge from '@/components/parent/ParentChildClassBadge';
+import ParentChildSelector from '@/components/parent/ParentChildSelector';
+import {
+  feeAssignmentService,
+  formatFeeStatusDisplay,
+  feeStatusToneClass,
+  type StudentFeeStatus,
+} from '@/services/feeAssignmentService';
 
 interface ChildStats {
   [key: string]: {
@@ -16,7 +23,7 @@ interface ChildStats {
     averageGrade: number;
     assignments: { completed: number; pending: number; total: number };
     behaviour: { merits: number; demerits: number };
-    feeStatus: string;
+    feeStatus: StudentFeeStatus;
     riskLevel: string;
   };
 }
@@ -39,13 +46,17 @@ interface Assignment {
   submissions?: Array<{ status: string }>;
 }
 
+/** Extra pixels added above the child row height — card grows upward only. */
+const VIRTUAL_CARD_TOP_EXTRA_PX = 72;
+
 export default function ParentDashboard() {
   const { user, selectedParentChildId, setSelectedParentChildId } = useAppStore();
   const navigate = useNavigate();
   const [childStats, setChildStats] = useState<ChildStats>({});
   const [recentAssignments, setRecentAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [openChildSelector, setOpenChildSelector] = useState(false);
+  const childRowRef = useRef<HTMLDivElement>(null);
+  const [childRowHeight, setChildRowHeight] = useState<number | undefined>();
 
   // Refs for request deduplication and cleanup
   const pendingRequestRef = useRef<string | null>(null);
@@ -195,7 +206,7 @@ export default function ParentDashboard() {
 
         const { data: studentRow, error: studentError } = await supabase
           .from('students')
-          .select('risk_level, class_id')
+          .select('risk_level')
           .eq('id', selectedParentChildId)
           .eq('school_id', user.schoolId)
           .maybeSingle();
@@ -206,30 +217,13 @@ export default function ParentDashboard() {
 
         const riskLevel = studentRow?.risk_level ?? 'low';
 
-        let feeStatus = 'unknown';
-        if (studentRow?.class_id) {
-          const [{ data: classFee }, { data: studentPayments }] = await Promise.all([
-            supabase
-              .from('fees')
-              .select('amount')
-              .eq('school_id', user.schoolId)
-              .eq('class_id', studentRow.class_id)
-              .eq('is_active', true)
-              .maybeSingle(),
-            supabase
-              .from('payments')
-              .select('amount')
-              .eq('school_id', user.schoolId)
-              .eq('student_id', selectedParentChildId)
-              .eq('status', 'completed'),
-          ]);
-          const expected = Number(classFee?.amount ?? 0);
-          const paid = (studentPayments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0);
-          if (expected <= 0) feeStatus = 'no_fee';
-          else if (paid >= expected) feeStatus = 'paid';
-          else if (paid > 0) feeStatus = 'partial';
-          else feeStatus = 'unpaid';
-        }
+        const childClassId = user?.children?.find((c: Child) => c.id === selectedParentChildId)?.classId;
+        const feeSummary = await feeAssignmentService.getStudentFeeSummary(
+          user.schoolId,
+          selectedParentChildId,
+          { classId: childClassId }
+        );
+        const feeStatus = feeSummary.status;
 
         // Fetch recent assignments for the dashboard preview
         try {
@@ -298,21 +292,35 @@ export default function ParentDashboard() {
     };
   }, []);
 
-  const childClassNames = useParentChildClasses();
   const selectedChildClassName = useSelectedChildClassName();
   const selectedChild = user?.children?.find((c: Child) => c.id === selectedParentChildId);
+  const hasMultipleChildren = (user?.children?.length ?? 0) > 1;
 
-  const childLabel = (child: Child) => {
-    const cls = child.className ?? childClassNames[child.id];
-    const name = `${child.firstName} ${child.lastName}`;
-    return cls ? `${name} · ${cls}` : name;
-  };
+  useLayoutEffect(() => {
+    const el = childRowRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      setChildRowHeight(el.getBoundingClientRect().height);
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    window.addEventListener('resize', measure);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [selectedParentChildId, hasMultipleChildren, user?.children?.length]);
+
   const stats = childStats[selectedParentChildId || ''] || {
     attendance: { present: 0, absent: 0, late: 0, percentage: 0 },
     averageGrade: 0,
     assignments: { completed: 0, pending: 0, total: 0 },
     behaviour: { merits: 0, demerits: 0 },
-    feeStatus: 'pending',
+    feeStatus: 'no_fee' as StudentFeeStatus,
     riskLevel: 'low',
   };
 
@@ -352,74 +360,56 @@ export default function ParentDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome Banner with Child Selector */}
+      {/* Welcome banner + child row + payment card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card card-hero"
+        className="card card-hero overflow-hidden"
       >
-        <div className="flex items-center justify-between">
+        <div className="space-y-5">
           <div>
-            <h1 className="text-2xl font-bold mb-2">Welcome, {user?.fullName}</h1>
-            <p className="text-gray-300 dark:text-gray-600">
-              {user?.children && user.children.length === 1
-                ? selectedChildClassName
-                  ? `Monitor ${selectedChild?.firstName}'s progress in ${selectedChildClassName}`
-                  : `Monitor ${selectedChild?.firstName}'s academic progress`
-                : `Monitor your ${user?.children?.length} children's academic progress`}
+            <h1 className="text-2xl lg:text-3xl font-bold mb-2">Welcome, {user?.fullName}</h1>
+            <p className="text-gray-300 dark:text-gray-600 text-sm lg:text-base max-w-xl">
+              {hasMultipleChildren
+                ? `${user?.children?.length} children linked — select a child to view their dashboard.`
+                : selectedChildClassName
+                  ? `Monitor ${selectedChild?.firstName}'s progress in ${selectedChildClassName}.`
+                  : `Monitor ${selectedChild?.firstName}'s academic progress.`}
             </p>
-            {user?.children && user.children.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {user.children.map((child: Child) => (
-                  <ParentChildClassBadge
-                    key={child.id}
-                    className={child.className ?? childClassNames[child.id]}
-                    size="sm"
-                  />
-                ))}
+          </div>
+
+          <div className="flex flex-col lg:flex-row lg:items-end gap-4 lg:gap-6">
+            <div ref={childRowRef} className="flex-1 min-w-0">
+              <ParentChildSelector variant="hero" bare className="!mt-0" />
+            </div>
+
+            {user?.schoolId && selectedParentChildId && (
+              <div
+                className="w-full lg:w-[400px] shrink-0 lg:h-[var(--card-h)]"
+                style={
+                  childRowHeight
+                    ? ({
+                        '--child-row-h': `${childRowHeight}px`,
+                        '--card-h': `${childRowHeight + VIRTUAL_CARD_TOP_EXTRA_PX}px`,
+                      } as React.CSSProperties)
+                    : undefined
+                }
+              >
+                <VirtualAccountCard
+                  embedded
+                  className="h-full"
+                  schoolId={user.schoolId}
+                  studentId={selectedParentChildId}
+                  classId={selectedChild?.classId}
+                  studentName={
+                    selectedChild
+                      ? `${selectedChild.firstName} ${selectedChild.lastName}`
+                      : undefined
+                  }
+                />
               </div>
             )}
           </div>
-
-          {/* Child Selector for Multiple Children */}
-          {user?.children && user.children.length > 1 && (
-            <div className="relative">
-              <button
-                onClick={() => setOpenChildSelector(!openChildSelector)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-              >
-                <span className="text-sm text-left">
-                  <span className="block">{selectedChild?.firstName} {selectedChild?.lastName}</span>
-                  {selectedChildClassName && (
-                    <span className="block text-xs text-gray-400 dark:text-gray-500">
-                      {selectedChildClassName}
-                    </span>
-                  )}
-                </span>
-                <ChevronDown className="w-4 h-4" />
-              </button>
-
-              {openChildSelector && (
-                <div className="absolute right-0 mt-2 w-48 bg-gray-900 dark:bg-white rounded-lg shadow-lg z-10 border border-gray-700 dark:border-gray-200">
-                  {user.children.map((child: Child) => (
-                    <button
-                      key={child.id}
-                      onClick={() => {
-                        setSelectedParentChildId(child.id);
-                        setOpenChildSelector(false);
-                      }}
-                      className={`w-full text-left px-4 py-2 hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors first:rounded-t-lg last:rounded-b-lg ${selectedParentChildId === child.id
-                        ? 'bg-gray-800 dark:bg-gray-100 font-semibold'
-                        : ''
-                        }`}
-                    >
-                      {childLabel(child)}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </motion.div>
 
@@ -524,20 +514,10 @@ export default function ParentDashboard() {
                 <p className="text-xs text-secondary-text mt-1">Demerits</p>
               </div>
               <div className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card text-center">
-                <p
-                  className={`text-lg font-bold capitalize ${
-                    stats.feeStatus === 'paid'
-                      ? 'text-green-600'
-                      : stats.feeStatus === 'partial'
-                        ? 'text-yellow-600'
-                        : stats.feeStatus === 'no_fee'
-                          ? 'text-secondary-text'
-                          : 'text-red-600'
-                  }`}
-                >
-                  {stats.feeStatus === 'no_fee' ? 'N/A' : stats.feeStatus}
+                <p className="text-xs text-secondary-text mb-2">Fee status</p>
+                <p className={`text-lg font-bold ${feeStatusToneClass(formatFeeStatusDisplay(stats.feeStatus).tone)}`}>
+                  {formatFeeStatusDisplay(stats.feeStatus).label}
                 </p>
-                <p className="text-xs text-secondary-text mt-1">Fee status</p>
               </div>
               <div className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card text-center">
                 <p className="text-2xl font-bold">{stats.attendance.late}</p>
@@ -603,11 +583,6 @@ export default function ParentDashboard() {
               <p className="text-center text-secondary-text py-4">No assignments yet</p>
             )}
           </motion.div>
-
-          {/* Virtual Account for fee payments */}
-          {user?.schoolId && selectedParentChildId && (
-            <VirtualAccountCard schoolId={user.schoolId} studentId={selectedParentChildId} />
-          )}
 
           {/* Quick Action Links */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

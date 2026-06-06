@@ -539,6 +539,26 @@ export async function updateStudent(
             };
         }
 
+        if (updates.firstName || updates.lastName) {
+            const { data: studentRow } = await supabase
+                .from('students')
+                .select('school_id')
+                .eq('id', studentId)
+                .maybeSingle();
+            if (studentRow?.school_id) {
+                void (async () => {
+                    try {
+                        const { monnifyService } = await import('@/services/monnifyService');
+                        if (await monnifyService.isConfigured(studentRow.school_id)) {
+                            await monnifyService.syncVirtualAccountName(studentRow.school_id, studentId);
+                        }
+                    } catch (e) {
+                        console.warn('[STUDENT] virtual account name sync skipped:', e);
+                    }
+                })();
+            }
+        }
+
         if (updates.classId || updates.status) {
             const { data: studentRow } = await supabase
                 .from('students')
