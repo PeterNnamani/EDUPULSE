@@ -13,6 +13,17 @@ const DEFAULT_RETRY_CONFIG: VerificationRetryConfig = {
     backoffMultiplier: 2,
 };
 
+export interface SubscriptionPlanPayload {
+    plan: string;
+    amount: number;
+    currency?: string;
+    billingCycle: string;
+    startDate: string;
+    endDate: string;
+    maxStudents: number;
+    autoRenew: boolean;
+}
+
 export class PaymentVerificationService {
     /**
      * Verify payment with Paystack using server-side Edge Function
@@ -22,6 +33,7 @@ export class PaymentVerificationService {
         reference: string,
         schoolId: string,
         email: string,
+        planDetails?: SubscriptionPlanPayload,
         config: Partial<VerificationRetryConfig> = {}
     ): Promise<{
         success: boolean;
@@ -60,7 +72,7 @@ export class PaymentVerificationService {
                             Authorization: `Bearer ${token}`,
                             apikey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
                         },
-                        body: JSON.stringify({ reference, schoolId, email }),
+                        body: JSON.stringify({ reference, schoolId, email, plan: planDetails }),
                     }
                 );
 

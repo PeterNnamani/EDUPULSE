@@ -19,12 +19,19 @@ import {
   Menu,
   X,
   ChevronDown,
+  Activity,
+  ShieldCheck,
+  UserCheck,
+  Wallet,
+  MessageSquare,
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { useState, useEffect } from 'react';
 import { ChatBot, WelcomeMessage } from '@/components/Chatbot';
 import NotificationBell from '@/components/NotificationBell';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import { type FeatureKey } from '@/config/planFeatures';
 
 const adminNavItems = [
   { label: 'Dashboard', path: '/admin', icon: LayoutDashboard },
@@ -33,17 +40,24 @@ const adminNavItems = [
   { label: 'Classes', path: '/admin/classes', icon: Building },
   { label: 'Subjects', path: '/admin/subjects', icon: BookOpen },
   { label: 'Subscriptions', path: '/admin/subscriptions', icon: DollarSign },
+  { label: 'Fee Structures', path: '/admin/fee-settings', icon: DollarSign },
   { label: 'Academic calendar', path: '/admin/academic-calendar', icon: CalendarDays },
   { label: 'Promotion', path: '/admin/academic-lifecycle', icon: GraduationCap },
+  { label: 'Duty Attendance', path: '/duty-attendance', icon: UserCheck },
+  { label: 'Teacher Activity', path: '/admin/teacher-activity', icon: Activity },
+  { label: 'Audit Logs', path: '/admin/audit-logs', icon: ShieldCheck },
+  { label: 'Messages', path: '/messages', icon: MessageSquare },
 ];
 
 const teacherNavItems = [
   { label: 'Dashboard', path: '/teacher', icon: LayoutDashboard },
   { label: 'Attendance', path: '/attendance', icon: CalendarDays },
+  { label: 'Duty Attendance', path: '/duty-attendance', icon: UserCheck },
   { label: 'Grades', path: '/grades', icon: ClipboardList },
   { label: 'Assignments', path: '/assignments', icon: BookOpen },
   { label: 'Behaviour', path: '/behaviour', icon: AlertTriangle },
   { label: 'Reports', path: '/reports', icon: FileText },
+  { label: 'Messages', path: '/messages', icon: MessageSquare },
 ];
 
 const principalNavItems = [
@@ -53,6 +67,7 @@ const principalNavItems = [
   { label: 'Attendance', path: '/principal/attendance', icon: CalendarDays },
   { label: 'Behaviour', path: '/principal/behaviour', icon: BookOpen },
   { label: 'Risk Analysis', path: '/risk', icon: AlertTriangle },
+  { label: 'Teacher Activity', path: '/admin/teacher-activity', icon: Activity },
   { label: 'Reports', path: '/reports', icon: FileText },
   { label: 'Settings', path: '/settings', icon: Settings },
 ];
@@ -67,6 +82,7 @@ const counselorNavItems = [
 const financeNavItems = [
   { label: 'Dashboard', path: '/finance', icon: LayoutDashboard },
   { label: 'Fees', path: '/fees', icon: DollarSign },
+  { label: 'Reconciliation', path: '/finance/reconciliation', icon: Wallet },
   { label: 'Reports', path: '/reports', icon: FileText },
 ];
 
@@ -75,6 +91,7 @@ const parentNavItems = [
   { label: 'Attendance', path: '/parent/attendance', icon: CalendarDays },
   { label: 'Grades', path: '/parent/grades', icon: ClipboardList },
   { label: 'Assignments', path: '/parent/assignments', icon: BookOpen },
+  { label: 'Messages', path: '/messages', icon: MessageSquare },
 ];
 
 const roleNavMap = {
@@ -86,6 +103,17 @@ const roleNavMap = {
   parent: parentNavItems,
 };
 
+// Nav paths gated behind a plan feature; absent paths are always available.
+const NAV_FEATURE_MAP: Record<string, FeatureKey> = {
+  '/risk': 'risk_detection',
+  '/interventions': 'interventions',
+  '/duty-attendance': 'duty_attendance',
+  '/admin/teacher-activity': 'teacher_activity',
+  '/admin/audit-logs': 'audit_logs',
+  '/finance/reconciliation': 'reconciliation',
+  '/messages': 'school_messaging',
+};
+
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -95,12 +123,31 @@ export default function Layout() {
   const [showWelcome, setShowWelcome] = useState(true);
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
 
-  const navItems = user ? roleNavMap[user.role] || [] : [];
+  const { hasFeature, loading: featuresLoading } = useFeatureAccess();
+  const allNavItems = user ? roleNavMap[user.role] || [] : [];
+  const navItems = allNavItems.filter((item) => {
+    const feature = NAV_FEATURE_MAP[item.path];
+    if (!feature) return true;
+    // While plan is loading, keep items visible to avoid flicker/hiding.
+    return featuresLoading || hasFeature(feature);
+  });
 
   useEffect(() => {
     if (isAuthenticated && user?.role === 'admin' && user.schoolId) {
       import('@/services/subscriptionService').then(({ runSubscriptionDeadlineChecks }) => {
-        void runSubscriptionDeadlineChecks(user.schoolId!);
+        void runSubscriptionDeadlineChecks(user.schoolId!).then(() => {
+          import('@/hooks/useFeatureAccess').then(({ refreshFeatureAccess }) => {
+            refreshFeatureAccess(user.schoolId!);
+          });
+        });
+      });
+      import('@/services/birthdayService').then(({ birthdayService }) => {
+        void birthdayService.runBirthdayGreetings(user.schoolId!);
+      });
+    }
+    if (isAuthenticated && (user?.role === 'admin' || user?.role === 'finance') && user.schoolId) {
+      import('@/services/reconciliationService').then(({ reconciliationService }) => {
+        void reconciliationService.runDailyReconciliation(user.schoolId!);
       });
     }
   }, [isAuthenticated, user?.role, user?.schoolId]);

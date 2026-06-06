@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion';
 import { AlertTriangle, Users, Calendar, MessageSquare, CheckCircle, Clock, UserX, FileText } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/store';
 import { interventionService } from '@/services/interventionService';
 import { supabase } from '@/lib/supabase';
+import { formatDate } from '@/utils/displayUtils';
 
 interface CaseWithStudent {
   id: string;
@@ -15,6 +17,7 @@ interface CaseWithStudent {
   lastContact: string;
   status: string;
   priority: string;
+  createdAt: string;
 }
 
 interface Meeting {
@@ -26,6 +29,7 @@ interface Meeting {
 
 export default function CounselorDashboard() {
   const { user } = useAppStore();
+  const navigate = useNavigate();
 
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [openCases, setOpenCases] = useState<CaseWithStudent[]>([]);
@@ -109,7 +113,8 @@ export default function CounselorDashboard() {
               daysOpen,
               lastContact,
               status: caseItem.status,
-              priority: caseItem.priority
+              priority: caseItem.priority,
+              createdAt: caseItem.createdAt
             };
           } catch (error) {
             console.error('Error fetching case details:', error);
@@ -145,17 +150,12 @@ export default function CounselorDashboard() {
 
       // Get recent interventions
       const recentCases = validCases.slice(0, 5);
-      const interventions = await Promise.all(
-        recentCases.map(async (caseItem) => {
-          const activities = await interventionService.getCaseActivities(user!.schoolId, caseItem.id);
-          return {
-            student: caseItem.student,
-            intervention: caseItem.type,
-            status: caseItem.status,
-            date: new Date(caseItem.id).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          };
-        })
-      );
+      const interventions = recentCases.map((caseItem) => ({
+        student: caseItem.student,
+        intervention: caseItem.type,
+        status: caseItem.status,
+        date: formatDate(caseItem.createdAt),
+      }));
       setRecentInterventions(interventions);
 
       const todayStr = new Date().toISOString().split('T')[0];
@@ -297,7 +297,7 @@ export default function CounselorDashboard() {
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Open Cases</h3>
-            <button className="text-sm text-black dark:text-white hover:underline">View All</button>
+            <button onClick={() => navigate('/interventions')} className="text-sm text-black dark:text-white hover:underline">View All</button>
           </div>
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
@@ -355,7 +355,7 @@ export default function CounselorDashboard() {
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Today's Schedule</h3>
-            <button className="text-sm text-black dark:text-white hover:underline">Add</button>
+            <button onClick={() => navigate('/interventions?new=1')} className="text-sm text-black dark:text-white hover:underline">Add</button>
           </div>
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
@@ -442,19 +442,19 @@ export default function CounselorDashboard() {
       >
         <h3 className="font-semibold mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
+          <button onClick={() => navigate('/interventions?new=1')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
             <UserX className="w-6 h-6" />
             <span className="text-sm font-medium">New Case</span>
           </button>
-          <button className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
+          <button onClick={() => navigate('/interventions')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
             <Calendar className="w-6 h-6" />
             <span className="text-sm font-medium">Schedule Meeting</span>
           </button>
-          <button className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
+          <button onClick={() => navigate('/interventions')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
             <MessageSquare className="w-6 h-6" />
             <span className="text-sm font-medium">Contact Parent</span>
           </button>
-          <button className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
+          <button onClick={() => navigate('/interventions')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
             <CheckCircle className="w-6 h-6" />
             <span className="text-sm font-medium">Close Case</span>
           </button>

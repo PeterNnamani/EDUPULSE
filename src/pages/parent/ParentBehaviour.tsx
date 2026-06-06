@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { TrendingUp, TrendingDown, AlertTriangle, Award, Search, Filter, Loader, ChevronDown } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
+import ParentChildPageHeader from '@/components/parent/ParentChildPageHeader';
 
 interface BehaviourRecord {
     id: string;
@@ -140,36 +141,7 @@ export default function ParentBehaviour() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-            >
-                <h1 className="text-3xl font-bold">Behaviour & Conduct</h1>
-                <p className="text-secondary-text mt-1">View {selectedChildData?.firstName}'s behaviour records</p>
-            </motion.div>
-
-            {/* Child Selector */}
-            {user?.children && user.children.length > 1 && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="card"
-                >
-                    <label className="label mb-2 block">Select Child</label>
-                    <select
-                        className="input-field"
-                        value={selectedParentChildId || ''}
-                        onChange={(e) => setSelectedParentChildId(e.target.value)}
-                    >
-                        {user.children.map((child: any) => (
-                            <option key={child.id} value={child.id}>
-                                {child.firstName} {child.lastName}
-                            </option>
-                        ))}
-                    </select>
-                </motion.div>
-            )}
+            <ParentChildPageHeader title="Behaviour & Conduct" subtitleSuffix="behaviour records" />
 
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">

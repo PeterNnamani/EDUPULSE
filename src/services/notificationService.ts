@@ -12,7 +12,14 @@ export type NotificationType =
     | 'intervention_reminder'
     | 'escalation_alert'
     | 'academic_event'
-    | 'system_alert';
+    | 'system_alert'
+    | 'arrival_alert'
+    | 'departure_alert'
+    | 'birthday_greeting'
+    | 'teacher_activity'
+    | 'payment_confirmation'
+    | 'reconciliation_alert'
+    | 'school_message';
 
 export type NotificationPriority = 'low' | 'medium' | 'high' | 'critical';
 export type NotificationStatus = 'unread' | 'read' | 'archived';

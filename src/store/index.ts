@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User, UserRole, SchoolState } from '@/types';
+import type { PlanTier } from '@/config/planFeatures';
 
 interface AppState {
   user: User | null;
@@ -11,6 +12,9 @@ interface AppState {
   darkMode: boolean;
   sidebarOpen: boolean;
   selectedParentChildId: string | null;
+  /** Set immediately after payment so gated features unlock without reload. */
+  activePlanTier: PlanTier | null;
+  featureAccessNonce: number;
 
   setUser: (user: User | null) => void;
   setSelectedRole: (role: UserRole | null) => void;
@@ -19,6 +23,8 @@ interface AppState {
   toggleDarkMode: () => void;
   toggleSidebar: () => void;
   setSelectedParentChildId: (childId: string | null) => void;
+  setActivePlanTier: (tier: PlanTier | null) => void;
+  bumpFeatureAccess: () => void;
   logout: () => void;
 }
 
@@ -37,6 +43,8 @@ export const useAppStore = create<AppState>()(
       darkMode: false,
       sidebarOpen: true,
       selectedParentChildId: null,
+      activePlanTier: null,
+      featureAccessNonce: 0,
 
       setUser: (user) => set({ user, isAuthenticated: !!user }),
       setSelectedRole: (selectedRole) => set({ selectedRole }),
@@ -45,16 +53,34 @@ export const useAppStore = create<AppState>()(
       toggleDarkMode: () => set((state) => ({ darkMode: !state.darkMode })),
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       setSelectedParentChildId: (selectedParentChildId) => set({ selectedParentChildId }),
-      logout: () => set({
-        user: null,
-        isAuthenticated: false,
-        selectedRole: null,
-        school: {
-          currentSchool: null,
-          currentTerm: null,
-          currentSession: null,
-        },
-        selectedParentChildId: null,
+      setActivePlanTier: (activePlanTier) => set({ activePlanTier }),
+      bumpFeatureAccess: () =>
+        set((state) => ({ featureAccessNonce: state.featureAccessNonce + 1 })),
+      logout: () => set((state) => {
+        const u = state.user;
+        if (u?.role === 'teacher' && u.schoolId) {
+          void import('@/services/teacherActivityService').then(({ teacherActivityService }) => {
+            void teacherActivityService.logActivity({
+              schoolId: u.schoolId!,
+              staffId: u.id,
+              staffName: u.fullName,
+              action: 'logout',
+              details: { at: new Date().toISOString() },
+            });
+          });
+        }
+        return {
+          user: null,
+          isAuthenticated: false,
+          selectedRole: null,
+          school: {
+            currentSchool: null,
+            currentTerm: null,
+            currentSession: null,
+          },
+          selectedParentChildId: null,
+          activePlanTier: null,
+        };
       }),
     }),
     {

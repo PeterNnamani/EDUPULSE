@@ -4,6 +4,8 @@ import { Plus, Search, Filter, MoreVertical, Edit2, Trash2, UserPlus, Download, 
 import { useAppStore } from '@/store';
 import { getStudents, createStudentWithParent, updateStudent } from '@/services/studentService';
 import { getClasses } from '@/services/classService';
+import VirtualAccountCard from '@/components/finance/VirtualAccountCard';
+import { getInitials } from '@/utils/displayUtils';
 
 interface StudentForm {
   firstName: string;
@@ -337,7 +339,7 @@ export default function StudentManagement() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-medium">
-                        {student.first_name.charAt(0)}{student.last_name.charAt(0)}
+                        {getInitials(student.first_name, student.last_name)}
                       </div>
                       <div>
                         <p className="font-medium">{student.first_name} {student.last_name}</p>
@@ -761,6 +763,17 @@ export default function StudentManagement() {
                   </select>
                 </div>
               </div>
+
+              {user?.schoolId && editingStudent.id && (
+                <div className="pt-4">
+                  <VirtualAccountCard
+                    schoolId={user.schoolId}
+                    studentId={editingStudent.id}
+                    studentName={`${editingStudent.firstName ?? ''} ${editingStudent.lastName ?? ''}`.trim()}
+                    allowProvision
+                  />
+                </div>
+              )}
 
               <div className="border-t border-border dark:border-gray-800 pt-6 flex items-center justify-end gap-3">
                 <button type="button" onClick={() => setShowEditModal(false)} className="btn-secondary">

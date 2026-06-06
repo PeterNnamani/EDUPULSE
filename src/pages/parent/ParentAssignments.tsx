@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ClipboardList, CheckCircle, Clock, AlertCircle, Loader } from 'lucide-react';
+import { ClipboardList, CheckCircle, Clock, AlertCircle, Loader, Upload } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { supabase } from '@/lib/supabase';
-import { getStudentAssignments } from '@/services/assignmentService';
+import {
+    getStudentAssignments,
+    submitAssignment,
+    SUBMISSION_OPTION_LABELS,
+    type SubmissionOption,
+} from '@/services/assignmentService';
+import ParentChildPageHeader from '@/components/parent/ParentChildPageHeader';
 
 interface AssignmentWithSubmission {
     id: string;
@@ -25,6 +30,12 @@ export default function ParentAssignments() {
     const { user, selectedParentChildId, setSelectedParentChildId } = useAppStore();
     const [assignments, setAssignments] = useState<AssignmentWithSubmission[]>([]);
     const [loading, setLoading] = useState(true);
+    const [submittingId, setSubmittingId] = useState<string | null>(null);
+    const [showSubmitModal, setShowSubmitModal] = useState(false);
+    const [activeAssignment, setActiveAssignment] = useState<AssignmentWithSubmission | null>(null);
+    const [submissionOption, setSubmissionOption] = useState<SubmissionOption>('homework_completed');
+    const [submissionNotes, setSubmissionNotes] = useState('');
+    const [submitError, setSubmitError] = useState('');
 
     const selectedChildData = user?.children?.find((c: any) => c.id === selectedParentChildId);
 
@@ -101,38 +112,50 @@ export default function ParentAssignments() {
         return status === 'pending' && new Date(dueDate) < new Date();
     };
 
+    const refreshAssignments = async () => {
+        if (!selectedParentChildId || !user?.schoolId) return;
+        const studentAssignments = await getStudentAssignments(user.schoolId, selectedParentChildId);
+        setAssignments(studentAssignments);
+    };
+
+    const openSubmitModal = (assignment: AssignmentWithSubmission) => {
+        setActiveAssignment(assignment);
+        setSubmissionOption('homework_completed');
+        setSubmissionNotes('');
+        setSubmitError('');
+        setShowSubmitModal(true);
+    };
+
+    const handleParentSubmit = async () => {
+        if (!activeAssignment || !selectedParentChildId || !user?.schoolId) return;
+        setSubmittingId(activeAssignment.id);
+        setSubmitError('');
+
+        const result = await submitAssignment(
+            user.schoolId,
+            activeAssignment.id,
+            selectedParentChildId,
+            {
+                submissionOption,
+                submittedBy: 'parent',
+                notes: submissionNotes,
+            }
+        );
+
+        setSubmittingId(null);
+
+        if (result.success) {
+            setShowSubmitModal(false);
+            setActiveAssignment(null);
+            await refreshAssignments();
+        } else {
+            setSubmitError(result.error || 'Failed to submit');
+        }
+    };
+
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-            >
-                <h1 className="text-3xl font-bold">Assignments</h1>
-                <p className="text-secondary-text mt-1">View {selectedChildData?.firstName}'s assignments</p>
-            </motion.div>
-
-            {/* Child Selector */}
-            {user?.children && user.children.length > 1 && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="card"
-                >
-                    <label className="block text-sm font-semibold mb-3">Select Child</label>
-                    <select
-                        value={selectedParentChildId || ''}
-                        onChange={(e) => setSelectedParentChildId(e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg bg-secondary-bg dark:bg-dark-card border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                        {user.children.map((child: any) => (
-                            <option key={child.id} value={child.id}>
-                                {child.firstName} {child.lastName}
-                            </option>
-                        ))}
-                    </select>
-                </motion.div>
-            )}
+            <ParentChildPageHeader title="Assignments" subtitleSuffix="assignments" />
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -263,6 +286,17 @@ export default function ParentAssignments() {
                                             <span className={`px-3 py-1 rounded-full text-sm font-semibold capitalize ${getStatusColor(submissionStatus)}`}>
                                                 {submissionStatus}
                                             </span>
+                                            {(submissionStatus === 'pending' || submissionStatus === 'late') && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openSubmitModal(assignment)}
+                                                    disabled={submittingId === assignment.id}
+                                                    className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-50"
+                                                >
+                                                    <Upload className="w-3.5 h-3.5" />
+                                                    Mark Submitted
+                                                </button>
+                                            )}
                                             {submissionStatus === 'graded' && submission?.score !== undefined && (
                                                 <div className="text-right">
                                                     <p className="font-bold text-lg">
@@ -282,6 +316,66 @@ export default function ParentAssignments() {
                     </div>
                 )}
             </motion.div>
+
+            {showSubmitModal && activeAssignment && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="w-full max-w-md bg-white dark:bg-dark-bg rounded-2xl shadow-xl"
+                    >
+                        <div className="p-6 border-b border-border dark:border-gray-800">
+                            <h2 className="text-xl font-bold">Submit Assignment</h2>
+                            <p className="text-sm text-secondary-text mt-1">{activeAssignment.title}</p>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="label mb-1.5 block">Submission type</label>
+                                <select
+                                    className="input-field"
+                                    value={submissionOption}
+                                    onChange={(e) => setSubmissionOption(e.target.value as SubmissionOption)}
+                                >
+                                    {(Object.entries(SUBMISSION_OPTION_LABELS) as [SubmissionOption, string][]).map(
+                                        ([value, label]) => (
+                                            <option key={value} value={value}>{label}</option>
+                                        )
+                                    )}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="label mb-1.5 block">Notes (optional)</label>
+                                <textarea
+                                    className="input-field min-h-20"
+                                    value={submissionNotes}
+                                    onChange={(e) => setSubmissionNotes(e.target.value)}
+                                    placeholder="Any details for the teacher..."
+                                />
+                            </div>
+                            {submitError && (
+                                <p className="text-sm text-red-600 dark:text-red-400">{submitError}</p>
+                            )}
+                        </div>
+                        <div className="p-6 border-t border-border dark:border-gray-800 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowSubmitModal(false)}
+                                className="btn-secondary"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleParentSubmit}
+                                disabled={submittingId === activeAssignment.id}
+                                className="btn-primary disabled:opacity-50"
+                            >
+                                {submittingId === activeAssignment.id ? 'Submitting...' : 'Confirm Submit'}
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
         </div>
     );
 }

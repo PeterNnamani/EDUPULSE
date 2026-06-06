@@ -1,5 +1,27 @@
 import { supabase } from '@/lib/supabase';
 import { notificationTriggerService } from './notificationTriggerService';
+import {
+  normalizePlan,
+  planTierRank,
+  type PlanTier,
+  PLAN_DEFINITIONS,
+} from '@/config/planFeatures';
+
+type SubscriptionRow = {
+  id?: string;
+  plan: string;
+  end_date: string;
+  status: string;
+  created_at?: string;
+  amount?: number;
+};
+
+export type ActivePaidPlan = {
+  tier: PlanTier;
+  plan: string;
+  endDate: string;
+  daysRemaining: number;
+};
 
 export interface SchoolSubscriptionStatus {
   schoolId: string;
@@ -8,35 +30,144 @@ export interface SchoolSubscriptionStatus {
   daysRemaining: number;
   isTrial: boolean;
   isExpired: boolean;
+  /** Highest-tier plan currently in effect (features follow this). */
   activePlan: string | null;
   activeEndDate: string | null;
+  /** All paid plans still within their paid period. */
+  activePaidPlans: ActivePaidPlan[];
   label: string;
 }
 
+function endOfDay(dateStr: string): Date {
+  const d = new Date(dateStr);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+export function isSubscriptionCurrent(sub: Pick<SubscriptionRow, 'end_date' | 'status'>, now = new Date()): boolean {
+  if (sub.status !== 'active') return false;
+  return endOfDay(sub.end_date) >= now;
+}
+
+function daysUntil(dateStr: string, now = new Date()): number {
+  return Math.max(0, Math.ceil((endOfDay(dateStr).getTime() - now.getTime()) / 86400000));
+}
+
+function filterCurrentSubscriptions(subs: SubscriptionRow[] | null | undefined): SubscriptionRow[] {
+  const now = new Date();
+  return (subs ?? []).filter((sub) => isSubscriptionCurrent(sub, now));
+}
+
+/** Pick the effective plan: highest tier among subscriptions still in their paid window. */
+export function pickBestActiveSubscription(
+  subs: SubscriptionRow[] | null | undefined
+): SubscriptionRow | null {
+  const current = filterCurrentSubscriptions(subs);
+  if (!current.length) return null;
+  return current.reduce((best, row) => {
+    const bestRank = planTierRank(best.plan);
+    const rowRank = planTierRank(row.plan);
+    if (rowRank !== bestRank) return rowRank > bestRank ? row : best;
+
+    const bestEnd = endOfDay(best.end_date).getTime();
+    const rowEnd = endOfDay(row.end_date).getTime();
+    if (rowEnd !== bestEnd) return rowEnd > bestEnd ? row : best;
+
+    const bestCreated = new Date(best.created_at ?? 0).getTime();
+    const rowCreated = new Date(row.created_at ?? 0).getTime();
+    return rowCreated > bestCreated ? row : best;
+  });
+}
+
+/** One slot per tier — longest end date wins when the same plan was paid more than once. */
+export function buildActivePaidPlanSlots(subs: SubscriptionRow[] | null | undefined): ActivePaidPlan[] {
+  const now = new Date();
+  const byTier = new Map<PlanTier, ActivePaidPlan>();
+
+  for (const sub of filterCurrentSubscriptions(subs)) {
+    const tier = normalizePlan(sub.plan);
+    const slot: ActivePaidPlan = {
+      tier,
+      plan: sub.plan,
+      endDate: sub.end_date,
+      daysRemaining: daysUntil(sub.end_date, now),
+    };
+    const existing = byTier.get(tier);
+    if (!existing || endOfDay(slot.endDate) > endOfDay(existing.endDate)) {
+      byTier.set(tier, slot);
+    }
+  }
+
+  return Array.from(byTier.values()).sort((a, b) => planTierRank(b.tier) - planTierRank(a.tier));
+}
+
+/** Mark individual subscriptions past end_date as expired; keep others active. */
+export async function expireEndedSubscriptions(schoolId: string): Promise<void> {
+  const now = new Date();
+  const { data: activeSubs } = await supabase
+    .from('subscriptions')
+    .select('id, end_date')
+    .eq('school_id', schoolId)
+    .eq('status', 'active');
+
+  const endedIds = (activeSubs ?? [])
+    .filter((sub) => endOfDay(sub.end_date) < now)
+    .map((sub) => sub.id);
+
+  if (endedIds.length > 0) {
+    await supabase
+      .from('subscriptions')
+      .update({ status: 'expired', updated_at: now.toISOString() })
+      .in('id', endedIds);
+  }
+
+  const { data: stillActive } = await supabase
+    .from('subscriptions')
+    .select('id, end_date, status')
+    .eq('school_id', schoolId)
+    .eq('status', 'active');
+
+  const hasCurrent = filterCurrentSubscriptions(stillActive).length > 0;
+
+  if (!hasCurrent) {
+    await supabase
+      .from('schools')
+      .update({ subscription_status: 'expired', updated_at: now.toISOString() })
+      .eq('id', schoolId);
+  } else {
+    await supabase
+      .from('schools')
+      .update({ subscription_status: 'active', updated_at: now.toISOString() })
+      .eq('id', schoolId);
+  }
+}
+
 export async function getSchoolSubscriptionStatus(schoolId: string): Promise<SchoolSubscriptionStatus> {
+  await expireEndedSubscriptions(schoolId);
+
   const { data: school } = await supabase
     .from('schools')
     .select('id, subscription_status, trial_ends_at')
     .eq('id', schoolId)
     .maybeSingle();
 
-  const { data: activeSub } = await supabase
+  const { data: activeSubs } = await supabase
     .from('subscriptions')
-    .select('plan, end_date, status')
+    .select('id, plan, end_date, status, created_at')
     .eq('school_id', schoolId)
-    .eq('status', 'active')
-    .order('end_date', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq('status', 'active');
+
+  const activePaidPlans = buildActivePaidPlanSlots(activeSubs);
+  const activeSub = pickBestActiveSubscription(activeSubs);
 
   const now = new Date();
   const trialEnds = school?.trial_ends_at ? new Date(school.trial_ends_at) : null;
-  const subEnd = activeSub?.end_date ? new Date(activeSub.end_date) : null;
+  const subEnd = activeSub?.end_date ? endOfDay(activeSub.end_date) : null;
 
   let daysRemaining = 0;
-  let label = 'Active subscription';
+  let label = 'No active subscription';
   const status = (school?.subscription_status as SchoolSubscriptionStatus['subscriptionStatus']) ?? 'trial';
-  const isTrial = !activeSub && (status === 'trial' || !!trialEnds);
+  const isTrial = activePaidPlans.length === 0 && (status === 'trial' || !!trialEnds);
   const deadline = isTrial ? trialEnds : subEnd;
 
   if (deadline) {
@@ -47,25 +178,36 @@ export async function getSchoolSubscriptionStatus(schoolId: string): Promise<Sch
           ? 'Trial ends today'
           : `Trial — ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} remaining`;
     } else if (activeSub) {
-      label = `${activeSub.plan} plan — renews/ends ${deadline.toLocaleDateString()}`;
+      const tier = normalizePlan(activeSub.plan);
+      const planName = PLAN_DEFINITIONS[tier].name;
+      if (activePaidPlans.length > 1) {
+        const others = activePaidPlans
+          .filter((p) => p.tier !== tier)
+          .map((p) => PLAN_DEFINITIONS[p.tier].name)
+          .join(', ');
+        label = `${planName} in effect — also active: ${others}`;
+      } else {
+        label = `${planName} plan — active until ${deadline.toLocaleDateString()}`;
+      }
     }
   }
 
   const isExpired =
     status === 'expired' ||
     status === 'suspended' ||
-    (isTrial && trialEnds && trialEnds < now && !activeSub) ||
-    (!!subEnd && subEnd < now && !isTrial);
+    (isTrial && trialEnds && trialEnds < now) ||
+    (activePaidPlans.length === 0 && !isTrial && status !== 'trial');
 
   return {
     schoolId,
-    subscriptionStatus: isExpired ? 'expired' : status,
+    subscriptionStatus: isExpired ? 'expired' : activePaidPlans.length > 0 || isTrial ? status : 'expired',
     trialEndsAt: school?.trial_ends_at ?? null,
     daysRemaining,
     isTrial,
     isExpired,
     activePlan: activeSub?.plan ?? null,
     activeEndDate: activeSub?.end_date ?? null,
+    activePaidPlans,
     label,
   };
 }
@@ -105,6 +247,7 @@ async function markReminderSent(schoolId: string, reminderType: string): Promise
 
 /** Run on admin login / periodic — trial ending, subscription ending, overdue. */
 export async function runSubscriptionDeadlineChecks(schoolId: string): Promise<void> {
+  await expireEndedSubscriptions(schoolId);
   const status = await getSchoolSubscriptionStatus(schoolId);
   const adminIds = await getAdminStaffIds(schoolId);
   if (adminIds.length === 0) return;
@@ -131,7 +274,7 @@ export async function runSubscriptionDeadlineChecks(schoolId: string): Promise<v
       }
     }
 
-    if (trialEnd < now && status.subscriptionStatus !== 'active') {
+    if (trialEnd < now && status.activePaidPlans.length === 0) {
       await supabase
         .from('schools')
         .update({ subscription_status: 'expired', updated_at: now.toISOString() })
@@ -140,20 +283,19 @@ export async function runSubscriptionDeadlineChecks(schoolId: string): Promise<v
   }
 
   if (status.activePlan && status.activeEndDate) {
-    const end = new Date(status.activeEndDate);
+    const end = endOfDay(status.activeEndDate);
     const daysLeft = Math.ceil((end.getTime() - now.getTime()) / 86400000);
 
     if (daysLeft <= 14 && daysLeft >= 0) {
       const eventType = daysLeft <= 0 ? 'overdue' : daysLeft <= 7 ? 'renewal_reminder' : 'due_soon';
       if (await shouldSendReminder(schoolId, `sub_${eventType}`)) {
-        const { data: sub } = await supabase
+        const { data: activeSubs } = await supabase
           .from('subscriptions')
-          .select('amount, plan')
+          .select('amount, plan, end_date, created_at, status')
           .eq('school_id', schoolId)
-          .eq('status', 'active')
-          .order('end_date', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .eq('status', 'active');
+
+        const sub = pickBestActiveSubscription(activeSubs);
 
         await notificationTriggerService.onSubscriptionPaymentEvent(
           schoolId,
@@ -166,19 +308,6 @@ export async function runSubscriptionDeadlineChecks(schoolId: string): Promise<v
         );
         await markReminderSent(schoolId, `sub_${eventType}`);
       }
-    }
-
-    if (end < now) {
-      await supabase
-        .from('subscriptions')
-        .update({ status: 'expired', updated_at: now.toISOString() })
-        .eq('school_id', schoolId)
-        .eq('status', 'active');
-
-      await supabase
-        .from('schools')
-        .update({ subscription_status: 'expired', updated_at: now.toISOString() })
-        .eq('id', schoolId);
     }
   }
 }

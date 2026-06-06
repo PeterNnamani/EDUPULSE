@@ -12,13 +12,15 @@ export default function WelcomeMessage({ isVisible, onDismiss }: WelcomeMessageP
     const [showTyping, setShowTyping] = useState(true);
     const [displayedText, setDisplayedText] = useState('');
 
+    const firstName = (user?.fullName || user?.name || '').split(' ')[0] || 'there';
+
     const messages: Record<string, string> = {
-        admin: `Welcome back, ${user?.name?.split(' ')[0]}! 👋 I'm your EduPulse Assistant. I can help you manage students, staff, classes, subscriptions, and answer any questions about your school's operations. Need help with anything?`,
-        teacher: `Welcome back, ${user?.name?.split(' ')[0]}! 👋 I'm here to help you manage attendance, grades, assignments, behavior records, and more. What would you like to do today?`,
-        principal: `Welcome back, ${user?.name?.split(' ')[0]}! 👋 I'm your assistant for risk analysis, reports, and school management. How can I support your leadership today?`,
-        counselor: `Welcome back, ${user?.name?.split(' ')[0]}! 👋 I'm here to support your interventions, risk analysis, and student support tasks. What can I help you with?`,
-        finance: `Welcome back, ${user?.name?.split(' ')[0]}! 👋 I'm your finance assistant. I can help you manage fees, generate financial reports, and track school finances. Need any help?`,
-        parent: `Welcome back, ${user?.name?.split(' ')[0]}! 👋 I'm here to help you stay updated on your child's attendance, grades, assignments, and behavior. What would you like to know?`,
+        admin: `Welcome back, ${firstName}! 👋 I'm your EduPulse Assistant. I can help you manage students, staff, classes, subscriptions, and answer any questions about your school's operations. Need help with anything?`,
+        teacher: `Welcome back, ${firstName}! 👋 I'm here to help you manage attendance, grades, assignments, behavior records, and more. What would you like to do today?`,
+        principal: `Welcome back, ${firstName}! 👋 I'm your assistant for risk analysis, reports, and school management. How can I support your leadership today?`,
+        counselor: `Welcome back, ${firstName}! 👋 I'm here to support your interventions, risk analysis, and student support tasks. What can I help you with?`,
+        finance: `Welcome back, ${firstName}! 👋 I'm your finance assistant. I can help you manage fees, generate financial reports, and track school finances. Need any help?`,
+        parent: `Welcome back, ${firstName}! 👋 I'm here to help you stay updated on your child's attendance, grades, assignments, and behavior. What would you like to know?`,
     };
 
     const message = user?.role ? messages[user.role] || messages.teacher : messages.teacher;

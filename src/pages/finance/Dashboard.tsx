@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAcademicCalendar } from '@/hooks';
 import { fetchFinanceDashboard, type FinanceDashboardData } from '@/services/financeDashboardService';
+import OnDutyWidget from '@/components/dashboard/OnDutyWidget';
 
 export default function FinanceDashboard() {
   const { user } = useAppStore();
@@ -112,6 +113,12 @@ export default function FinanceDashboard() {
           </div>
         </div>
       </motion.div>
+
+      {schoolId && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+          <OnDutyWidget schoolId={schoolId} />
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {keyMetrics.map((metric, index) => {

@@ -191,6 +191,23 @@ export const promotionEngine = {
 
             if (updateError) throw updateError;
 
+            const { auditService } = await import('@/services/auditService');
+            void auditService.logAudit({
+                schoolId,
+                userId: approvedBy ?? null,
+                userType: 'staff',
+                action: 'student_promoted',
+                entityType: 'student',
+                entityId: studentId,
+                newValues: { sessionId, newClassId, promotionStatus, notes },
+            });
+
+            // Auto-assign new class fees on promotion.
+            if (promotionStatus === 'promoted') {
+                const { feeAssignmentService } = await import('@/services/feeAssignmentService');
+                void feeAssignmentService.assignFeesForStudent(schoolId, studentId, newClassId, 'promotion');
+            }
+
             return { success: true };
         } catch (error) {
             console.error('Error promoting student:', error);

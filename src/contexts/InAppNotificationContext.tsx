@@ -13,6 +13,7 @@ import {
   notificationService,
   type Notification,
 } from '@/services/notificationService';
+import { filterNotificationsForViewer } from '@/services/notificationDispatchService';
 import { playLoginNotificationSound, unlockNotificationAudio } from '@/utils/playNotificationSound';
 
 interface InAppNotificationContextValue {
@@ -37,6 +38,7 @@ export function InAppNotificationProvider({ children }: { children: React.ReactN
   const queryClient = useQueryClient();
   const knownIdsRef = useRef<Set<string>>(new Set());
   const loginHandledRef = useRef(false);
+  const toastTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [loginToasts, setLoginToasts] = useState<Notification[]>([]);
 
   const enabled = isAuthenticated && !!user?.id && !!user?.schoolId;
@@ -45,9 +47,10 @@ export function InAppNotificationProvider({ children }: { children: React.ReactN
     queryKey: ['in-app-notifications', user?.id, user?.schoolId, user?.role],
     queryFn: async () => {
       if (!user?.id || !user?.schoolId) return [];
-      return notificationService.getNotifications(user.schoolId, user.id, {
+      const list = await notificationService.getNotifications(user.schoolId, user.id, {
         limit: 50,
       });
+      return filterNotificationsForViewer(list, user.role);
     },
     refetchInterval: 8000,
     enabled,
@@ -69,7 +72,8 @@ export function InAppNotificationProvider({ children }: { children: React.ReactN
 
   const handleNewNotifications = useCallback(
     (incoming: Notification[], isInitialLogin = false) => {
-      const fresh = incoming.filter((n) => !knownIdsRef.current.has(n.id));
+      const visible = filterNotificationsForViewer(incoming, user?.role);
+      const fresh = visible.filter((n) => !knownIdsRef.current.has(n.id));
       if (fresh.length === 0) return;
 
       fresh.forEach((n) => knownIdsRef.current.add(n.id));
@@ -85,7 +89,7 @@ export function InAppNotificationProvider({ children }: { children: React.ReactN
         setLoginToasts((prev) => [...fresh.slice(0, 2), ...prev].slice(0, 5));
       }
     },
-    []
+    [user?.role]
   );
 
   // Reset when user changes (logout / different account)
@@ -110,7 +114,10 @@ export function InAppNotificationProvider({ children }: { children: React.ReactN
       notificationService
         .getNotifications(user!.schoolId, user!.id, { status: 'unread', limit: 50 })
         .then((unread) => {
-          const active = unread.filter((n) => n.status === 'unread' && !n.archivedAt);
+          const active = filterNotificationsForViewer(
+            unread.filter((n) => n.status === 'unread' && !n.archivedAt),
+            user!.role
+          );
           active.forEach((n) => knownIdsRef.current.add(n.id));
           if (active.length > 0) {
             handleNewNotifications(active, true);
@@ -181,14 +188,35 @@ export function InAppNotificationProvider({ children }: { children: React.ReactN
   );
 
   const dismissLoginToast = useCallback((id: string) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
     setLoginToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Auto-dismiss toast bubbles after 5 seconds
+  useEffect(() => {
+    loginToasts.forEach((toast) => {
+      if (toastTimersRef.current.has(toast.id)) return;
+      const timer = setTimeout(() => dismissLoginToast(toast.id), 5000);
+      toastTimersRef.current.set(toast.id, timer);
+    });
+  }, [loginToasts, dismissLoginToast]);
+
+  useEffect(() => {
+    return () => {
+      toastTimersRef.current.forEach((timer) => clearTimeout(timer));
+      toastTimersRef.current.clear();
+    };
   }, []);
 
   return (
     <InAppNotificationContext.Provider
       value={{
         notifications: unreadNotifications,
-        unreadCount: counts.unread,
+        unreadCount: unreadNotifications.length,
         isLoading,
         refetch: () => void refetch(),
         markAsRead,

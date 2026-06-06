@@ -204,7 +204,7 @@ export const StudentAcademicHistoryViewer: React.FC<StudentAcademicHistoryViewer
                         ${record.promotion_status === 'repeat' ? 'text-yellow-600' : ''}
                         ${record.promotion_status === 'graduated' ? 'text-blue-600' : ''}
                       `}>
-                                                {record.promotion_status.charAt(0).toUpperCase() + record.promotion_status.slice(1)}
+                                                {record.promotion_status ? record.promotion_status.charAt(0).toUpperCase() + record.promotion_status.slice(1) : '—'}
                                             </span>
                                         </p>
                                     </div>

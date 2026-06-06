@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { reportCardGenerationService } from '@/services/reportCardGenerationService';
 import { resultNotificationService } from '@/services/resultNotificationService';
+import { useAppStore } from '@/store';
 import type { ReportCard, StudentResult } from '@/types';
 
 interface ReportCardViewerProps {
@@ -22,6 +23,8 @@ export const ReportCardViewer: React.FC<ReportCardViewerProps> = ({
     parentId,
     isParent = false,
 }) => {
+    const { user } = useAppStore();
+    const schoolId = user?.schoolId ?? '';
     const [reportCard, setReportCard] = useState<ReportCard | null>(null);
     const [reportHistory, setReportHistory] = useState<ReportCard[]>([]);
     const [studentResults, setStudentResults] = useState<StudentResult[]>([]);
@@ -33,11 +36,12 @@ export const ReportCardViewer: React.FC<ReportCardViewerProps> = ({
     // Fetch report cards
     useEffect(() => {
         const fetchReportCards = async () => {
+            if (!schoolId) {
+                setLoading(false);
+                return;
+            }
             try {
                 setLoading(true);
-
-                // TODO: Get school ID from auth context
-                const schoolId = ''; // TODO
 
                 // Get report history
                 const history = await reportCardGenerationService.getStudentReportCardHistory(
@@ -69,7 +73,7 @@ export const ReportCardViewer: React.FC<ReportCardViewerProps> = ({
         };
 
         fetchReportCards();
-    }, [studentId, sessionId, termId]);
+    }, [studentId, sessionId, termId, schoolId]);
 
     // Record parent access
     useEffect(() => {
@@ -80,8 +84,7 @@ export const ReportCardViewer: React.FC<ReportCardViewerProps> = ({
 
     const recordAccess = async () => {
         try {
-            // TODO: Get school ID from auth context
-            const schoolId = '';
+            if (!schoolId) return;
 
             if (parentId && reportCard) {
                 await resultNotificationService.recordParentAccess(
@@ -119,9 +122,9 @@ export const ReportCardViewer: React.FC<ReportCardViewerProps> = ({
     const handleDownloadPDF = async () => {
         // TODO: Implement PDF generation and download
         console.log('Download PDF');
-        if (isParent && parentId && reportCard) {
+        if (isParent && parentId && reportCard && schoolId) {
             await resultNotificationService.recordParentAccess(
-                '', // TODO: Get school ID
+                schoolId,
                 parentId,
                 studentId,
                 reportCard.id,

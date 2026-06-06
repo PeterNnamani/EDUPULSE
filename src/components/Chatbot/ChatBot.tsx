@@ -103,7 +103,7 @@ export default function ChatBot({ onShowWelcome }: ChatBotProps) {
                                 <div className="h-full flex flex-col items-center justify-center text-center">
                                     <MessageCircle className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
                                     <p className="text-gray-500 dark:text-gray-400">
-                                        Hi {user?.name?.split(' ')[0]}! I'm your personal assistant. Ask me anything about your account or tasks.
+                                        Hi {(user?.fullName || user?.name || '').split(' ')[0] || 'there'}! I'm your personal assistant. Ask me anything about your account or tasks.
                                     </p>
                                 </div>
                             ) : (

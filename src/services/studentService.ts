@@ -68,10 +68,65 @@ interface StudentWithParent extends StudentData {
  * Create a new student and register parent/guardian
  * Links student to parent via student_parents table
  */
+export interface StudentLimitInfo {
+    allowed: boolean;
+    current: number;
+    max: number;
+    planName: string;
+    remaining: number;
+}
+
+/**
+ * Returns the school's current student usage vs the plan limit.
+ * Used to block creation and to surface usage on the dashboard.
+ */
+export async function checkStudentLimit(schoolId: string): Promise<StudentLimitInfo> {
+    const [{ getSchoolSubscriptionStatus }, { getPlanDefinition }] = await Promise.all([
+        import('@/services/subscriptionService'),
+        import('@/config/planFeatures'),
+    ]);
+
+    const status = await getSchoolSubscriptionStatus(schoolId);
+    // Active trial gets full access; expired/no-plan falls back to Starter.
+    const planSource = status.activePlan
+        ? status.activePlan
+        : status.isTrial && !status.isExpired
+            ? 'enterprise_plus'
+            : 'starter';
+    const plan = getPlanDefinition(planSource);
+
+    const { count } = await supabase
+        .from('students')
+        .select('id', { count: 'exact', head: true })
+        .eq('school_id', schoolId)
+        .eq('status', 'active');
+
+    const current = count ?? 0;
+    const max = plan.maxStudents;
+    const allowed = !Number.isFinite(max) || current < max;
+
+    return {
+        allowed,
+        current,
+        max: Number.isFinite(max) ? max : Infinity,
+        planName: plan.name,
+        remaining: Number.isFinite(max) ? Math.max(0, max - current) : Infinity,
+    };
+}
+
 export async function createStudentWithParent(
     request: CreateStudentRequest
 ): Promise<CreateStudentResponse> {
     try {
+        // Step 0: Enforce the plan's student limit.
+        const limitCheck = await checkStudentLimit(request.schoolId);
+        if (!limitCheck.allowed) {
+            return {
+                success: false,
+                error: `Student limit reached for your ${limitCheck.planName} plan (${limitCheck.max}). Upgrade your subscription to add more students.`,
+            };
+        }
+
         // Step 1: Generate School-Specific Student ID
         const studentNumber = await getNextStudentSequence(request.schoolId);
         const studentId = await generateStudentId(request.schoolId, studentNumber);
@@ -264,6 +319,40 @@ export async function createStudentWithParent(
             classRow?.name ?? 'Class'
         );
 
+        const { auditService } = await import('@/services/auditService');
+        void auditService.logAudit({
+            schoolId: request.schoolId,
+            userType: 'staff',
+            action: 'student_registered',
+            entityType: 'student',
+            entityId: newStudent.id,
+            newValues: {
+                studentId,
+                name: `${request.firstName} ${request.lastName}`,
+                classId: request.classId,
+            },
+        });
+
+        const { feeAssignmentService } = await import('@/services/feeAssignmentService');
+        void feeAssignmentService.assignFeesForStudent(
+            request.schoolId,
+            newStudent.id,
+            request.classId,
+            'registration'
+        );
+
+        // Reserve a Monnify virtual account if the school has configured Monnify.
+        void (async () => {
+            try {
+                const { monnifyService } = await import('@/services/monnifyService');
+                if (await monnifyService.isConfigured(request.schoolId)) {
+                    await monnifyService.ensureVirtualAccount(request.schoolId, newStudent.id);
+                }
+            } catch (e) {
+                console.warn('[STUDENT] virtual account reservation skipped:', e);
+            }
+        })();
+
         return {
             success: true,
             data: {
@@ -375,7 +464,8 @@ export async function getChildrenByParentPhone(
           class_id,
           status,
           admission_number,
-          state_of_origin
+          state_of_origin,
+          classes(name)
         )
       `
             )
@@ -396,6 +486,7 @@ export async function getChildrenByParentPhone(
                 gender: item.students.gender,
                 date_of_birth: item.students.date_of_birth,
                 class_id: item.students.class_id,
+                class_name: (item.students.classes as { name?: string } | null)?.name ?? undefined,
                 status: item.students.status,
                 admission_number: item.students.admission_number,
                 state_of_origin: item.students.state_of_origin,
@@ -446,6 +537,35 @@ export async function updateStudent(
                 success: false,
                 error: error.message || 'Failed to update student',
             };
+        }
+
+        if (updates.classId || updates.status) {
+            const { data: studentRow } = await supabase
+                .from('students')
+                .select('school_id')
+                .eq('id', studentId)
+                .maybeSingle();
+            if (studentRow?.school_id) {
+                const { auditService } = await import('@/services/auditService');
+                void auditService.logAudit({
+                    schoolId: studentRow.school_id,
+                    userType: 'staff',
+                    action: updates.status ? 'student_transferred' : 'student_class_changed',
+                    entityType: 'student',
+                    entityId: studentId,
+                    newValues: { classId: updates.classId, status: updates.status },
+                });
+
+                if (updates.classId) {
+                    const { feeAssignmentService } = await import('@/services/feeAssignmentService');
+                    void feeAssignmentService.assignFeesForStudent(
+                        studentRow.school_id,
+                        studentId,
+                        updates.classId,
+                        'class_change'
+                    );
+                }
+            }
         }
 
         return { success: true };

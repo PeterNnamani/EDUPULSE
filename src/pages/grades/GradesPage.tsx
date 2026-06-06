@@ -6,6 +6,8 @@ import { getTeacherClasses, getClassStudents } from '@/services/classService';
 import { bulkRecordGrades, getStudentGrades } from '@/services/gradeService';
 import { supabase } from '@/lib/supabase';
 import { getCurrentTerm, getTermsForSession, getCurrentSession } from '@/utils/calendarUtils';
+import PreschoolAssessmentForm from '@/components/grades/PreschoolAssessmentForm';
+import { getInitials } from '@/utils/displayUtils';
 
 interface Student {
   id: string;
@@ -41,6 +43,7 @@ export default function GradesPage() {
   const [selectedAssessment, setSelectedAssessment] = useState('ca1');
   const [students, setStudents] = useState<Student[]>([]);
   const [grades, setGrades] = useState<Record<string, number>>({});
+  const [earlyYearsClassIds, setEarlyYearsClassIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>('');
@@ -68,6 +71,19 @@ export default function GradesPage() {
         setClasses(teacherClasses);
         if (teacherClasses.length > 0) {
           setSelectedClass(teacherClasses[0].id);
+        }
+
+        // Detect early-years (Nursery/Kindergarten) classes for rating-based assessment.
+        const classIds = teacherClasses.map((c) => c.id);
+        if (classIds.length > 0) {
+          const { data: earlyRows } = await supabase
+            .from('classes')
+            .select('id, is_early_years')
+            .eq('school_id', user.schoolId)
+            .in('id', classIds);
+          setEarlyYearsClassIds(
+            new Set((earlyRows ?? []).filter((r) => r.is_early_years).map((r) => r.id))
+          );
         }
 
         // Load subjects
@@ -193,12 +209,54 @@ export default function GradesPage() {
     }
   };
 
+  const isEarlyYears = earlyYearsClassIds.has(selectedClass);
+
+  const enteredScores = Object.values(grades).filter((v) => v > 0);
   const stats = {
-    average: students.length > 0
-      ? Object.values(grades).reduce((a, b) => a + (b || 0), 0) / Math.max(Object.keys(grades).length, 1)
+    average: enteredScores.length > 0
+      ? enteredScores.reduce((a, b) => a + b, 0) / enteredScores.length
       : 0,
-    highest: students.length > 0 ? Math.max(...Object.values(grades), 0) : 0,
-    lowest: students.length > 0 && Object.values(grades).length > 0 ? Math.min(...Object.values(grades)) : 0,
+    highest: enteredScores.length > 0 ? Math.max(...enteredScores) : 0,
+    lowest: enteredScores.length > 0 ? Math.min(...enteredScores) : 0,
+  };
+
+  const handleCalculateAverages = () => {
+    if (enteredScores.length === 0) {
+      setError('Enter at least one grade before calculating averages');
+      return;
+    }
+    setSuccessMessage(
+      `Class average: ${stats.average.toFixed(1)} | Highest: ${stats.highest} | Lowest: ${stats.lowest}`
+    );
+    setError('');
+  };
+
+  const handleExportGrades = () => {
+    const subjectName = subjects.find((s) => s.id === selectedSubject)?.name ?? 'Subject';
+    const className = classes.find((c) => c.id === selectedClass)?.name ?? 'Class';
+    const assessmentLabel = assessments.find((a) => a.value === selectedAssessment)?.label ?? selectedAssessment;
+
+    const headers = ['Student ID', 'Student Name', 'Score'];
+    const rows = students.map((s) => [
+      s.student_id,
+      `${s.first_name} ${s.last_name}`,
+      grades[s.id] ?? '',
+    ]);
+
+    const csv = [
+      `Grades Export - ${className} - ${subjectName} - ${assessmentLabel}`,
+      `Generated: ${new Date().toLocaleString()}`,
+      '',
+      headers.join(','),
+      ...rows.map((r) => r.map((c) => `"${c}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `grades_${className.replace(/\s+/g, '_')}_${assessmentLabel}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   if (loading) {
@@ -237,31 +295,33 @@ export default function GradesPage() {
           <p className="text-secondary-text">Enter and manage student grades</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn-secondary flex items-center gap-2">
+          <button onClick={handleCalculateAverages} className="btn-secondary flex items-center gap-2">
             <Calculator className="w-4 h-4" />
             Calculate Averages
           </button>
-          <button className="btn-secondary flex items-center gap-2">
+          <button onClick={handleExportGrades} className="btn-secondary flex items-center gap-2">
             <Download className="w-4 h-4" />
             Export
           </button>
-          <button
-            onClick={handleSaveGrades}
-            disabled={saving || students.length === 0}
-            className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? (
-              <>
-                <Loader className="w-4 h-4 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Plus className="w-4 h-4" />
-                Save Grades
-              </>
-            )}
-          </button>
+          {!isEarlyYears && (
+            <button
+              onClick={handleSaveGrades}
+              disabled={saving || students.length === 0}
+              className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? (
+                <>
+                  <Loader className="w-4 h-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Plus className="w-4 h-4" />
+                  Save Grades
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -349,6 +409,18 @@ export default function GradesPage() {
         </div>
       </div>
 
+      {isEarlyYears && user?.schoolId && user?.id && (
+        <PreschoolAssessmentForm
+          schoolId={user.schoolId}
+          classId={selectedClass}
+          termId={selectedTerm}
+          assessedBy={user.id}
+          students={students}
+        />
+      )}
+
+      {!isEarlyYears && (
+      <>
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4">
         <div className="card text-center">
@@ -391,7 +463,7 @@ export default function GradesPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-medium text-sm">
-                          {`${student.first_name[0]}${student.last_name[0]}`.toUpperCase()}
+                          {getInitials(student.first_name, student.last_name)}
                         </div>
                         <div>
                           <span className="font-medium">{fullName}</span>
@@ -441,6 +513,8 @@ export default function GradesPage() {
           </table>
         </div>
       </motion.div>
+      </>
+      )}
     </div>
   );
 }

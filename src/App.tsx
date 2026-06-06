@@ -18,12 +18,15 @@ import PrincipalAttendanceOverview from '@/pages/principal/AttendanceOverview';
 import PrincipalBehaviourOverview from '@/pages/principal/BehaviourOverview';
 import CounselorDashboard from '@/pages/counselor/Dashboard';
 import FinanceDashboard from '@/pages/finance/Dashboard';
+import ReconciliationPage from '@/pages/finance/ReconciliationPage';
+import FeatureGate from '@/components/FeatureGate';
 import ParentDashboard from '@/pages/parent/Dashboard';
 import StudentManagement from '@/pages/admin/StudentManagement';
 import StaffManagement from '@/pages/admin/StaffManagement';
 import ClassManagement from '@/pages/admin/ClassManagement';
 import SubjectsManagement from '@/pages/admin/SubjectsManagement';
 import AttendancePage from '@/pages/attendance/AttendancePage';
+import DutyAttendancePage from '@/pages/attendance/DutyAttendancePage';
 import GradesPage from '@/pages/grades/GradesPage';
 import AssignmentsPage from '@/pages/assignments/AssignmentsPage';
 import BehaviourPage from '@/pages/behaviour/BehaviourPage';
@@ -37,11 +40,15 @@ import SubscriptionsPage from '@/pages/admin/SubscriptionsPage';
 import FeeSettingsPage from '@/pages/admin/FeeSettingsPage';
 import AcademicCalendarSettings from '@/pages/admin/AcademicCalendarSettings';
 import AcademicLifecyclePage from '@/pages/admin/AcademicLifecyclePage';
+import TeacherActivityPage from '@/pages/admin/TeacherActivityPage';
+import AuditLogPage from '@/pages/admin/AuditLogPage';
+import ReportCardsPage from '@/pages/admin/ReportCardsPage';
 import ParentAttendance from '@/pages/parent/ParentAttendance';
 import ParentGrades from '@/pages/parent/ParentGrades';
 import ParentAssignments from '@/pages/parent/ParentAssignments';
 import ParentBehaviour from '@/pages/parent/ParentBehaviour';
 import Layout from '@/components/Layout';
+import MessagesPage from '@/pages/messages/MessagesPage';
 
 function AppContent() {
   const { onboardingComplete, selectedRole, isAuthenticated, darkMode, user } = useAppStore();
@@ -119,6 +126,23 @@ function AppContent() {
         <Route path="/admin/fee-settings" element={<FeeSettingsPage />} />
         <Route path="/admin/academic-calendar" element={<AcademicCalendarSettings />} />
         <Route path="/admin/academic-lifecycle" element={<AcademicLifecyclePage />} />
+        <Route path="/admin/report-cards" element={<ReportCardsPage />} />
+        <Route
+          path="/admin/teacher-activity"
+          element={
+            <FeatureGate feature="teacher_activity">
+              <TeacherActivityPage />
+            </FeatureGate>
+          }
+        />
+        <Route
+          path="/admin/audit-logs"
+          element={
+            <FeatureGate feature="audit_logs">
+              <AuditLogPage />
+            </FeatureGate>
+          }
+        />
         <Route path="/teacher" element={<TeacherDashboard />} />
         <Route path="/principal" element={<PrincipalDashboard />} />
         <Route path="/principal/students" element={<PrincipalStudentsOverview />} />
@@ -127,10 +151,26 @@ function AppContent() {
         <Route path="/principal/behaviour" element={<PrincipalBehaviourOverview />} />
         <Route path="/counselor" element={<CounselorDashboard />} />
         <Route path="/finance" element={<FinanceDashboard />} />
+        <Route
+          path="/finance/reconciliation"
+          element={
+            <FeatureGate feature="reconciliation">
+              <ReconciliationPage />
+            </FeatureGate>
+          }
+        />
         <Route path="/parent" element={<ParentDashboard />} />
 
         {/* Teacher/Staff Pages */}
         <Route path="/attendance" element={user?.role === 'parent' ? <ParentAttendance /> : <AttendancePage />} />
+        <Route
+          path="/duty-attendance"
+          element={
+            <FeatureGate feature="duty_attendance">
+              <DutyAttendancePage />
+            </FeatureGate>
+          }
+        />
         <Route path="/grades" element={user?.role === 'parent' ? <ParentGrades /> : <GradesPage />} />
         <Route path="/assignments" element={user?.role === 'parent' ? <ParentAssignments /> : <AssignmentsPage />} />
         <Route path="/behaviour" element={user?.role === 'parent' ? <ParentBehaviour /> : <BehaviourPage />} />
@@ -141,11 +181,33 @@ function AppContent() {
         <Route path="/parent/assignments" element={<ParentAssignments />} />
         <Route path="/parent/behaviour" element={<ParentBehaviour />} />
         <Route path="/fees" element={<FeesPage />} />
-        <Route path="/risk" element={<RiskAnalysisPage />} />
-        <Route path="/interventions" element={<InterventionsPage />} />
+        <Route
+          path="/risk"
+          element={
+            <FeatureGate feature="risk_detection">
+              <RiskAnalysisPage />
+            </FeatureGate>
+          }
+        />
+        <Route
+          path="/interventions"
+          element={
+            <FeatureGate feature="interventions">
+              <InterventionsPage />
+            </FeatureGate>
+          }
+        />
         <Route path="/reports" element={<ReportsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/notifications" element={<NotificationCenter />} />
+        <Route
+          path="/messages"
+          element={
+            <FeatureGate feature="school_messaging">
+              <MessagesPage />
+            </FeatureGate>
+          }
+        />
         <Route path="/" element={<Navigate to={getDashboardRoute()} replace />} />
         <Route path="*" element={<Navigate to={getDashboardRoute()} replace />} />
       </Route>

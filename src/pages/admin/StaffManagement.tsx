@@ -1,10 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Search, Filter, Edit2, Trash2, UserPlus, Copy, Check, Eye, EyeOff, BookOpen, X, AlertCircle } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { createStaff, updateStaff } from '@/services/authService';
 import { notificationTriggerService } from '@/services/notificationTriggerService';
 import { supabase } from '@/lib/supabase';
+import { getInitialsFromName } from '@/utils/displayUtils';
+import StaffTeachingAssignments from '@/components/admin/StaffTeachingAssignments';
+import { buildStaffTeachingMap } from '@/utils/staffTeachingMap';
 
 interface Staff {
   id: string;
@@ -45,6 +48,15 @@ export default function StaffManagement() {
   const [classList, setClassList] = useState<Class[]>([]);
   const [subjectList, setSubjectList] = useState<Subject[]>([]);
   const [staffSubjects, setStaffSubjects] = useState<Record<string, string[]>>({});
+  const [classSubjectRows, setClassSubjectRows] = useState<
+    Array<{
+      teacher_id: string | null;
+      class_id: string;
+      subject_id: string;
+      classes?: { id: string; name: string; grade_level?: string } | null;
+      subjects?: { id: string; name: string } | null;
+    }>
+  >([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedPin, setCopiedPin] = useState(false);
   const [showPin, setShowPin] = useState(false);
@@ -81,14 +93,27 @@ export default function StaffManagement() {
     role: string;
   } | null>(null);
 
-  // Fetch staff list and subjects
+  // Fetch staff list, classes, and assignments
   useEffect(() => {
     if (user?.schoolId) {
       fetchStaff();
+      fetchClasses();
       fetchSubjects();
       fetchStaffSubjects();
+      fetchClassSubjects();
     }
   }, [user?.schoolId]);
+
+  const staffTeachingMap = useMemo(
+    () =>
+      buildStaffTeachingMap(
+        classList,
+        classSubjectRows,
+        staffSubjects,
+        Object.fromEntries(subjectList.map((s) => [s.id, s.name]))
+      ),
+    [classList, classSubjectRows, staffSubjects, subjectList]
+  );
 
   const fetchStaff = async () => {
     if (!user?.schoolId) return;
@@ -155,6 +180,25 @@ export default function StaffManagement() {
       setSubjectList(data || []);
     } catch (error) {
       console.error('Error fetching subjects:', error);
+    }
+  };
+
+  const fetchClassSubjects = async () => {
+    if (!user?.schoolId) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('class_subjects')
+        .select(
+          'teacher_id, class_id, subject_id, classes(id, name, grade_level), subjects(id, name)'
+        )
+        .eq('school_id', user.schoolId);
+
+      if (error) throw error;
+      setClassSubjectRows((data as typeof classSubjectRows) || []);
+    } catch (error) {
+      console.error('Error fetching class subjects:', error);
+      setClassSubjectRows([]);
     }
   };
 
@@ -226,11 +270,6 @@ export default function StaffManagement() {
   };
 
   const handleEditClick = (staff: Staff) => {
-    // Admins can only edit themselves, they should use Settings for their own profile
-    if (user?.role === 'admin' && user?.id !== staff.id) {
-      alert('As admin, you can only edit your own profile through Settings.');
-      return;
-    }
     setEditingStaff(staff);
     setEditFormData({
       fullName: staff.full_name,
@@ -357,6 +396,7 @@ export default function StaffManagement() {
         setSelectedClasses(new Set());
         fetchStaff();
         fetchClasses();
+        fetchClassSubjects();
       }, 1500);
     } catch (error) {
       console.error('Error assigning classes:', error);
@@ -446,6 +486,7 @@ export default function StaffManagement() {
         setAssigningStaff(null);
         setSelectedSubjects(new Set());
         fetchStaffSubjects();
+        fetchClassSubjects();
       }, 1500);
     } catch (error: any) {
       console.error('Error assigning subjects:', error);
@@ -506,15 +547,6 @@ export default function StaffManagement() {
     }, 2000);
   };
 
-  const getStaffAssignedClasses = (staffId: string) => {
-    return classList.filter(c => c.class_teacher_id === staffId);
-  };
-
-  const getStaffAssignedSubjects = (staffId: string) => {
-    const subjectIds = staffSubjects[staffId] || [];
-    return subjectList.filter(s => subjectIds.includes(s.id));
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -555,24 +587,22 @@ export default function StaffManagement() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredStaff.map((staff, index) => {
-              const assignedClasses = getStaffAssignedClasses(staff.id);
-              return (
+            {filteredStaff.map((staff, index) => (
                 <motion.div
                   key={staff.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="card-hover"
+                  className="card-hover flex flex-col"
                 >
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-bold text-lg">
-                      {staff.full_name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                    <div className="w-12 h-12 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-bold text-lg shrink-0">
+                      {getInitialsFromName(staff.full_name)}
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold">{staff.full_name}</h3>
-                        <span className={`badge ${getRoleBadge(staff.role)}`}>{staff.role}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <h3 className="font-semibold truncate">{staff.full_name}</h3>
+                        <span className={`badge shrink-0 ${getRoleBadge(staff.role)}`}>{staff.role}</span>
                       </div>
                       <p className="text-xs text-secondary-text font-mono mt-1">{staff.staff_id}</p>
                       {staff.department && <p className="text-sm text-secondary-text mt-1">{staff.department}</p>}
@@ -609,30 +639,8 @@ export default function StaffManagement() {
                         </div>
                       )}
 
-                      {staff.role === 'teacher' && assignedClasses.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs font-medium text-secondary-text mb-1">Assigned Classes:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {assignedClasses.map((cls) => (
-                              <span key={cls.id} className="text-xs px-2 py-1 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
-                                {cls.name}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {staff.role === 'teacher' && getStaffAssignedSubjects(staff.id).length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs font-medium text-secondary-text mb-1">Assigned Subjects:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {getStaffAssignedSubjects(staff.id).map((subject) => (
-                              <span key={subject.id} className="text-xs px-2 py-1 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300">
-                                {subject.name}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
+                      {staff.role === 'teacher' && (
+                        <StaffTeachingAssignments profile={staffTeachingMap[staff.id]} />
                       )}
 
                       <div className="flex items-center gap-2 mt-3">
@@ -665,8 +673,7 @@ export default function StaffManagement() {
                     </div>
                   </div>
                 </motion.div>
-              );
-            })}
+            ))}
           </div>
         )}
       </div>
@@ -982,7 +989,9 @@ export default function StaffManagement() {
             <div className="p-6 border-b border-border dark:border-gray-800 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold">Assign Classes to {assigningStaff.full_name}</h2>
-                <p className="text-sm text-secondary-text mt-1">Select classes this teacher should be assigned to</p>
+                <p className="text-sm text-secondary-text mt-1">
+                  Sets this teacher as <strong>Class Teacher</strong> (form teacher). Use Assign Subjects for subject-only teaching in shared classes.
+                </p>
               </div>
               <button
                 onClick={() => {
@@ -1097,7 +1106,9 @@ export default function StaffManagement() {
             <div className="p-6 border-b border-border dark:border-gray-800 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold">Assign Subjects to {assigningStaff.full_name}</h2>
-                <p className="text-sm text-secondary-text mt-1">Select subjects this teacher should be assigned to</p>
+                <p className="text-sm text-secondary-text mt-1">
+                  Subjects appear on the teacher&apos;s class card. Two teachers can teach the same class with different subjects.
+                </p>
               </div>
               <button
                 onClick={() => {

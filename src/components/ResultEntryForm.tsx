@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { resultEntryService } from '@/services/resultEntryService';
 import { gradingEngine } from '@/services/gradingEngine';
+import { supabase } from '@/lib/supabase';
 import type { StudentResult, GradingScale } from '@/types';
 
 interface ResultEntryFormProps {
@@ -67,18 +68,22 @@ export const ResultEntryForm: React.FC<ResultEntryFormProps> = ({
                 const scale = await gradingEngine.getDefaultGradingScale(schoolId);
                 setGradingScale(scale);
 
-                // TODO: Fetch students from class
-                // const { data: studentData } = await supabase
-                //   .from('students')
-                //   .select('*')
-                //   .eq('class_id', classId);
-                // setStudents(studentData || []);
+                const { data: studentData } = await supabase
+                    .from('students')
+                    .select('id, first_name, last_name, student_id')
+                    .eq('school_id', schoolId)
+                    .eq('class_id', classId)
+                    .eq('status', 'active')
+                    .order('first_name');
+                setStudents(studentData || []);
 
-                // TODO: Fetch subjects
-                // const { data: subjectData } = await supabase
-                //   .from('subjects')
-                //   .select('*');
-                // setSubjects(subjectData || []);
+                const { data: subjectData } = await supabase
+                    .from('subjects')
+                    .select('id, name')
+                    .eq('school_id', schoolId)
+                    .eq('is_active', true)
+                    .order('name');
+                setSubjects(subjectData || []);
             } catch (err) {
                 console.error('Error fetching data:', err);
             }

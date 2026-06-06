@@ -162,6 +162,16 @@ export const graduationService = {
 
             if (recordError) throw recordError;
 
+            const { auditService } = await import('@/services/auditService');
+            void auditService.logAudit({
+                schoolId,
+                userType: 'staff',
+                action: 'student_graduated',
+                entityType: 'student',
+                entityId: studentId,
+                newValues: { sessionId, finalClassId, certificateNumber, finalGPA },
+            });
+
             return { success: true, data: graduation };
         } catch (error) {
             console.error('Error graduating student:', error);

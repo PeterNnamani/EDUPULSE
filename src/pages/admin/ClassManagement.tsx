@@ -40,7 +40,12 @@ export default function ClassManagement() {
     fee: '0',
   });
 
-  const gradeLevels = ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6', 'JSS1', 'JSS2', 'JSS3', 'SS1', 'SS2', 'SS3'];
+  const gradeLevels = ['Creche', 'Playgroup', 'Nursery 1', 'Nursery 2', 'Nursery 3', 'Kindergarten', 'Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6', 'JSS1', 'JSS2', 'JSS3', 'SS1', 'SS2', 'SS3'];
+
+  const earlyYearsLevels = ['Creche', 'Playgroup', 'Nursery 1', 'Nursery 2', 'Nursery 3', 'Kindergarten'];
+  const isEarlyYearsLevel = (level: string) =>
+    earlyYearsLevels.some((l) => level.toLowerCase().includes(l.toLowerCase())) ||
+    /creche|playgroup|nursery|kindergarten|\bkg\b|^pre/i.test(level);
   const sections = ['A', 'B', 'C', 'D', 'E'];
 
   // Load classes on mount
@@ -117,6 +122,14 @@ export default function ClassManagement() {
       });
 
       if (result.success) {
+        // Flag early-years classes for rating-based assessment.
+        if (result.classId && isEarlyYearsLevel(formData.gradeLevel)) {
+          await supabase
+            .from('classes')
+            .update({ is_early_years: true })
+            .eq('id', result.classId);
+        }
+
         // Create fee record for this class
         if (parseFloat(formData.fee) > 0 && result.classId) {
           const { error: feeError } = await supabase
@@ -166,6 +179,12 @@ export default function ClassManagement() {
       });
 
       if (result.success) {
+        // Keep early-years flag in sync with the grade level.
+        await supabase
+          .from('classes')
+          .update({ is_early_years: isEarlyYearsLevel(editingClass.gradeLevel) })
+          .eq('id', editingClass.id);
+
         // Update or create fee record for this class
         if (editingClass.fee > 0) {
           // Check if fee exists

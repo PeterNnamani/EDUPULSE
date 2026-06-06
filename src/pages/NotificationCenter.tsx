@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     Bell,
     Archive,
@@ -6,11 +7,14 @@ import {
     Filter,
     Clock,
     AlertCircle,
-    CheckCircle2
+    CheckCircle2,
+    Eye,
 } from 'lucide-react';
 import { notificationService, Notification, NotificationStatus } from '@/services/notificationService';
+import { filterNotificationsForViewer } from '@/services/notificationDispatchService';
 import { useAppStore } from '@/store';
 import { useQuery } from '@tanstack/react-query';
+import NotificationPreviewModal, { hasNotificationPreview } from '@/components/NotificationPreviewModal';
 
 interface NotificationFilters {
     status: NotificationStatus | 'all';
@@ -30,6 +34,27 @@ export default function NotificationCenter() {
     });
 
     const [selectedNotifications, setSelectedNotifications] = useState<Set<string>>(new Set());
+    const [previewNotification, setPreviewNotification] = useState<Notification | null>(null);
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    useEffect(() => {
+        const preview = searchParams.get('preview');
+        if (!preview) return;
+        setPreviewNotification({
+            id: 'url-preview',
+            schoolId: schoolId ?? '',
+            recipientId: user?.id ?? '',
+            recipientRole: user?.role ?? 'admin',
+            notificationType: 'teacher_activity',
+            title: 'Activity preview',
+            message: 'Opened from notification link',
+            priority: 'medium',
+            status: 'unread',
+            actionUrl: `/notifications?${searchParams.toString()}`,
+            createdAt: new Date().toISOString(),
+        });
+        setSearchParams({}, { replace: true });
+    }, [searchParams, setSearchParams, schoolId, user?.id, user?.role]);
 
     // Fetch all notifications
     const { data: notifications = [], isLoading, refetch } = useQuery(
@@ -56,8 +81,10 @@ export default function NotificationCenter() {
                 });
             }
 
+            const visible = filterNotificationsForViewer(allNotifications, user.role);
+
             // Apply filters
-            return allNotifications.filter(n => {
+            return visible.filter(n => {
                 if (filters.priority !== 'all' && n.priority !== filters.priority) return false;
                 if (filters.type !== 'all' && n.notificationType !== filters.type) return false;
                 if (
@@ -156,7 +183,10 @@ export default function NotificationCenter() {
         { value: 'fee_alert', label: 'Fee Alert' },
         { value: 'risk_alert', label: 'Risk Alert' },
         { value: 'intervention_reminder', label: 'Intervention' },
-        { value: 'escalation_alert', label: 'Escalation' }
+        { value: 'escalation_alert', label: 'Escalation' },
+        { value: 'teacher_activity', label: 'Teacher Activity' },
+        { value: 'arrival_alert', label: 'Duty Arrival' },
+        { value: 'departure_alert', label: 'Duty Departure' },
     ];
 
     return (
@@ -167,7 +197,10 @@ export default function NotificationCenter() {
                     <Bell size={32} />
                     Notification Center
                 </h1>
-                <p className="text-gray-600 mt-2">Manage all your notifications in one place</p>
+                <p className="text-gray-600 mt-2">
+                  Manage all your notifications in one place. Use <strong>View details</strong> on
+                  teacher or duty alerts to preview attendance, grades, and more.
+                </p>
             </div>
 
             {/* Filters */}
@@ -359,13 +392,15 @@ export default function NotificationCenter() {
                                             <Archive size={14} />
                                             Archive
                                         </button>
-                                        {notification.actionUrl && (
-                                            <a
-                                                href={notification.actionUrl}
-                                                className="text-xs text-green-600 hover:text-green-700 font-medium"
+                                        {hasNotificationPreview(notification) && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setPreviewNotification(notification)}
+                                                className="px-2.5 py-1 text-xs font-semibold bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"
                                             >
-                                                View →
-                                            </a>
+                                                <Eye size={14} />
+                                                View details
+                                            </button>
                                         )}
                                     </div>
                                 </div>
@@ -374,6 +409,10 @@ export default function NotificationCenter() {
                     </div>
                 )}
             </div>
+            <NotificationPreviewModal
+                notification={previewNotification}
+                onClose={() => setPreviewNotification(null)}
+            />
         </div>
     );
 }

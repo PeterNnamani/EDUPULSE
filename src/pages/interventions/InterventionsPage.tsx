@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Plus, Calendar, User, CheckCircle, Clock, AlertTriangle, MessageSquare, Loader } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { interventionService } from '@/services/interventionService';
 import { supabase } from '@/lib/supabase';
+import { getInitialsFromName } from '@/utils/displayUtils';
 
 interface InterventionData {
   id: string;
@@ -23,9 +25,23 @@ interface StudentOption {
   class: string;
 }
 
+const INTERVENTION_TYPES = [
+  'Academic Support',
+  'Attendance Monitoring',
+  'Behaviour Support',
+  'Counseling',
+] as const;
+
 export default function InterventionsPage() {
   const { user } = useAppStore();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [interventionType, setInterventionType] = useState<string>(INTERVENTION_TYPES[0]);
+  const [priority, setPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
+  const [description, setDescription] = useState('');
+  const [notifyParent, setNotifyParent] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [formError, setFormError] = useState('');
   const [interventions, setInterventions] = useState<InterventionData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [allStudents, setAllStudents] = useState<StudentOption[]>([]);
@@ -46,6 +62,21 @@ export default function InterventionsPage() {
       loadAllStudents();
     }
   }, [user?.id, user?.schoolId]);
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowAddModal(true);
+      const studentId = searchParams.get('studentId');
+      if (studentId && allStudents.length > 0) {
+        const match = allStudents.find((s) => s.id === studentId);
+        if (match) {
+          setSelectedStudent(match);
+          setStudentSearchQuery(match.name);
+        }
+      }
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, allStudents, setSearchParams]);
 
   const loadAllStudents = async () => {
     try {
@@ -102,12 +133,6 @@ export default function InterventionsPage() {
     setShowStudentDropdown(false);
   };
 
-  useEffect(() => {
-    if (user?.id && user?.schoolId) {
-      fetchInterventionsData();
-    }
-  }, [user?.id, user?.schoolId]);
-
   const fetchInterventionsData = async () => {
     try {
       setIsLoading(true);
@@ -149,12 +174,12 @@ export default function InterventionsPage() {
               className = classData?.name || 'N/A';
             }
 
-            // Get counselor info
+            // Get counselor info (assigned_to_id is auth.users id)
             const { data: counselor } = await supabase
               .from('staff')
               .select('full_name')
               .eq('school_id', user!.schoolId)
-              .eq('id', caseItem.assigned_to_id)
+              .eq('user_id', caseItem.assigned_to_id)
               .maybeSingle();
 
             // Calculate progress (based on activities)
@@ -210,6 +235,49 @@ export default function InterventionsPage() {
       setInterventions([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const resetModal = () => {
+    setShowAddModal(false);
+    setSelectedStudent(null);
+    setStudentSearchQuery('');
+    setShowStudentDropdown(false);
+    setInterventionType(INTERVENTION_TYPES[0]);
+    setPriority('medium');
+    setDescription('');
+    setNotifyParent(true);
+    setFormError('');
+  };
+
+  const handleCreateIntervention = async () => {
+    if (!selectedStudent || !user?.schoolId || !user?.id) return;
+
+    setCreating(true);
+    setFormError('');
+
+    const mappedPriority =
+      priority === 'critical' ? 'critical' : priority;
+
+    const result = await interventionService.createManualIntervention(
+      user.schoolId,
+      selectedStudent.id,
+      user.id,
+      {
+        category: interventionService.uiTypeToCategory(interventionType),
+        priority: mappedPriority,
+        description,
+        notifyParent,
+      }
+    );
+
+    setCreating(false);
+
+    if (result.success) {
+      resetModal();
+      fetchInterventionsData();
+    } else {
+      setFormError(result.error || 'Failed to create intervention');
     }
   };
 
@@ -307,7 +375,7 @@ export default function InterventionsPage() {
               <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-bold">
-                    {intervention.student.split(' ').map(n => n[0]).join('')}
+                    {getInitialsFromName(intervention.student)}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -424,48 +492,64 @@ export default function InterventionsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="label mb-1.5 block">Intervention Type</label>
-                  <select className="input-field">
-                    <option>Academic Support</option>
-                    <option>Attendance Monitoring</option>
-                    <option>Behaviour Support</option>
-                    <option>Counseling</option>
+                  <select
+                    className="input-field"
+                    value={interventionType}
+                    onChange={(e) => setInterventionType(e.target.value)}
+                  >
+                    {INTERVENTION_TYPES.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="label mb-1.5 block">Priority</label>
-                  <select className="input-field">
+                  <select
+                    className="input-field"
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value as typeof priority)}
+                  >
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
                     <option value="high">High</option>
-                    <option value="urgent">Urgent</option>
+                    <option value="critical">Urgent</option>
                   </select>
                 </div>
               </div>
               <div>
                 <label className="label mb-1.5 block">Description</label>
-                <textarea className="input-field min-h-24" placeholder="Intervention plan details..." />
+                <textarea
+                  className="input-field min-h-24"
+                  placeholder="Intervention plan details..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
               </div>
               <div>
                 <label className="label mb-1.5 block">Notify Parent</label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" className="w-4 h-4 rounded border-border" defaultChecked />
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-border"
+                    checked={notifyParent}
+                    onChange={(e) => setNotifyParent(e.target.checked)}
+                  />
                   <span className="text-sm">Send notification to parent</span>
                 </label>
               </div>
+              {formError && (
+                <p className="text-sm text-red-600 dark:text-red-400">{formError}</p>
+              )}
             </div>
             <div className="p-6 border-t border-border dark:border-gray-800 flex justify-end gap-3">
-              <button onClick={() => {
-                setShowAddModal(false);
-                setSelectedStudent(null);
-                setStudentSearchQuery('');
-                setShowStudentDropdown(false);
-              }} className="btn-secondary">Cancel</button>
-              <button onClick={() => {
-                setShowAddModal(false);
-                setSelectedStudent(null);
-                setStudentSearchQuery('');
-                setShowStudentDropdown(false);
-              }} className="btn-primary" disabled={!selectedStudent}>Create Intervention</button>
+              <button onClick={resetModal} className="btn-secondary">Cancel</button>
+              <button
+                onClick={handleCreateIntervention}
+                className="btn-primary"
+                disabled={!selectedStudent || creating}
+              >
+                {creating ? 'Creating...' : 'Create Intervention'}
+              </button>
             </div>
           </motion.div>
         </div>

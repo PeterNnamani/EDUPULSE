@@ -97,6 +97,17 @@ export async function createAssignment(
             request.dueDate
         );
 
+        const { teacherActivityService } = await import('@/services/teacherActivityService');
+        void teacherActivityService.logActivity({
+            schoolId: request.schoolId,
+            staffId: request.teacherId ?? null,
+            action: 'assignment_created',
+            entityType: 'assignment',
+            entityId: data.id,
+            relatedClassId: request.classId,
+            details: { title: request.title, dueDate: request.dueDate },
+        });
+
         return { success: true, data };
     } catch (error) {
         console.error('Create assignment error:', error);
@@ -134,7 +145,8 @@ export async function getTeacherAssignments(
                 const { count: submissionCount } = await supabase
                     .from('assignment_submissions')
                     .select('*', { count: 'exact', head: true })
-                    .eq('assignment_id', assignment.id);
+                    .eq('assignment_id', assignment.id)
+                    .in('status', ['submitted', 'graded', 'late']);
 
                 // Get total students in the class
                 const { count: totalStudents } = await supabase
@@ -246,16 +258,53 @@ export async function getStudentAssignments(
     }
 }
 
+export type SubmissionOption =
+    | 'homework_completed'
+    | 'attendance_confirmed'
+    | 'project_submitted'
+    | 'parent_acknowledged'
+    | 'other';
+
+export const SUBMISSION_OPTION_LABELS: Record<SubmissionOption, string> = {
+    homework_completed: 'Homework completed',
+    attendance_confirmed: 'Attendance confirmed',
+    project_submitted: 'Project submitted',
+    parent_acknowledged: 'Parent acknowledged',
+    other: 'Other',
+};
+
+function buildSubmissionRemarks(
+    option: SubmissionOption,
+    notes?: string,
+    submittedBy?: 'parent' | 'teacher'
+): string {
+    const label = SUBMISSION_OPTION_LABELS[option];
+    const by = submittedBy === 'teacher' ? 'Teacher' : 'Parent';
+    const extra = notes?.trim() ? ` — ${notes.trim()}` : '';
+    return `[${by}] ${label}${extra}`;
+}
+
 /**
- * Create assignment submission (student submitting work)
+ * Create assignment submission (parent or teacher marking as submitted)
  */
 export async function submitAssignment(
     schoolId: string,
     assignmentId: string,
     studentId: string,
-    attachmentUrl?: string,
-    remarks?: string
+    options?: {
+        attachmentUrl?: string;
+        remarks?: string;
+        submissionOption?: SubmissionOption;
+        submittedBy?: 'parent' | 'teacher';
+        notes?: string;
+    }
 ): Promise<{ success: boolean; data?: AssignmentSubmissionData; error?: string }> {
+    const attachmentUrl = options?.attachmentUrl;
+    const submissionOption = options?.submissionOption ?? 'homework_completed';
+    const submittedBy = options?.submittedBy ?? 'parent';
+    const remarks =
+        options?.remarks ??
+        buildSubmissionRemarks(submissionOption, options?.notes, submittedBy);
     try {
         // Check if submission already exists
         const { data: existing } = await supabase
@@ -266,9 +315,9 @@ export async function submitAssignment(
             .maybeSingle();
 
         const now = new Date().toISOString();
+        let saved: AssignmentSubmissionData | undefined;
 
         if (existing) {
-            // Update existing submission
             const { data, error } = await supabase
                 .from('assignment_submissions')
                 .update({
@@ -289,10 +338,8 @@ export async function submitAssignment(
                     error: error.message || 'Failed to update submission',
                 };
             }
-
-            return { success: true, data };
+            saved = data;
         } else {
-            // Create new submission
             const { data, error } = await supabase
                 .from('assignment_submissions')
                 .insert([
@@ -316,16 +363,99 @@ export async function submitAssignment(
                     error: error.message || 'Failed to create submission',
                 };
             }
-
-            console.log('[ASSIGNMENT_SUBMITTED]', assignmentId, 'by student', studentId);
-            return { success: true, data };
+            saved = data;
         }
+
+        console.log('[ASSIGNMENT_SUBMITTED]', assignmentId, 'by', submittedBy, studentId);
+
+        const { dispatchAssignmentSubmitted } = await import('@/services/notificationDispatchService');
+        void dispatchAssignmentSubmitted(
+            schoolId,
+            assignmentId,
+            studentId,
+            submittedBy,
+            SUBMISSION_OPTION_LABELS[submissionOption]
+        );
+
+        return { success: true, data: saved };
     } catch (error) {
         console.error('Submit assignment error:', error);
         return {
             success: false,
             error: error instanceof Error ? error.message : 'Failed to submit assignment',
         };
+    }
+}
+
+/**
+ * Teacher marks a student's assignment as submitted
+ */
+export async function teacherMarkSubmitted(
+    schoolId: string,
+    assignmentId: string,
+    studentId: string,
+    submissionOption: SubmissionOption = 'homework_completed',
+    notes?: string
+): Promise<{ success: boolean; error?: string }> {
+    const result = await submitAssignment(schoolId, assignmentId, studentId, {
+        submissionOption,
+        submittedBy: 'teacher',
+        notes,
+    });
+    return { success: result.success, error: result.error };
+}
+
+export interface AssignmentSubmissionWithStudent extends AssignmentSubmissionData {
+    student_name: string;
+    student_number?: string;
+}
+
+/**
+ * All submissions for an assignment with student names (teacher view)
+ */
+export async function getAssignmentSubmissions(
+    schoolId: string,
+    assignmentId: string,
+    classId: string
+): Promise<AssignmentSubmissionWithStudent[]> {
+    try {
+        const { data: students } = await supabase
+            .from('students')
+            .select('id, first_name, last_name, student_id')
+            .eq('school_id', schoolId)
+            .eq('class_id', classId)
+            .eq('status', 'active')
+            .order('first_name');
+
+        const { data: submissions } = await supabase
+            .from('assignment_submissions')
+            .select('*')
+            .eq('assignment_id', assignmentId);
+
+        const subMap = new Map((submissions ?? []).map((s) => [s.student_id, s]));
+
+        return (students ?? []).map((s) => {
+            const sub = subMap.get(s.id);
+            return {
+                id: sub?.id ?? '',
+                assignment_id: assignmentId,
+                student_id: s.id,
+                submitted_at: sub?.submitted_at,
+                score: sub?.score,
+                remarks: sub?.remarks,
+                attachment_url: sub?.attachment_url,
+                status: sub?.status ?? 'pending',
+                graded_by: sub?.graded_by,
+                graded_at: sub?.graded_at,
+                created_at: sub?.created_at ?? '',
+                updated_at: sub?.updated_at ?? '',
+                student_name: `${s.first_name} ${s.last_name}`,
+                student_number: s.student_id,
+            };
+        });
+    } catch (error) {
+        console.error('Get assignment submissions error:', error);
+        return [];
     }
 }
 

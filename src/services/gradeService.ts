@@ -181,6 +181,29 @@ export async function bulkRecordGrades(
         }
 
         console.log('[BULK_GRADES_RECORDED]', recorded, 'grades for', classId);
+
+        const { auditService } = await import('@/services/auditService');
+        void auditService.logAudit({
+            schoolId,
+            userId: enteredById ?? null,
+            userType: 'staff',
+            action: 'result_uploaded',
+            entityType: 'grades',
+            entityId: classId,
+            newValues: { classId, subjectId, academicTermId, assessmentType, recorded },
+        });
+
+        const { teacherActivityService } = await import('@/services/teacherActivityService');
+        void teacherActivityService.logActivity({
+            schoolId,
+            staffId: enteredById ?? null,
+            action: 'results_uploaded',
+            entityType: 'grades',
+            entityId: classId,
+            relatedClassId: classId,
+            details: { subjectId, assessmentType, recorded },
+        });
+
         return { success: true, recorded };
     } catch (error) {
         console.error('Bulk record grades error:', error);

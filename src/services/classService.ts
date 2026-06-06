@@ -250,59 +250,187 @@ export async function deleteClass(classId: string): Promise<{ success: boolean; 
     }
 }
 
+export interface TeacherSubjectSlot {
+    subjectId: string;
+    subjectName: string;
+    subjectCode?: string;
+}
+
+export interface TeacherClassLoad {
+    classId: string;
+    className: string;
+    gradeLevel?: string;
+    section?: string;
+    studentCount: number;
+    isFormTeacher: boolean;
+    subjects: TeacherSubjectSlot[];
+}
+
+export interface TeacherTeachingLoad {
+    classes: TeacherClassLoad[];
+    /** School-wide subject assignments not yet linked to a specific class. */
+    generalSubjects: TeacherSubjectSlot[];
+}
+
+async function getClassStudentCount(schoolId: string, classId: string): Promise<number> {
+    const { count, error } = await supabase
+        .from('students')
+        .select('id', { count: 'exact', head: true })
+        .eq('school_id', schoolId)
+        .eq('class_id', classId)
+        .eq('status', 'active');
+    if (error) return 0;
+    return count ?? 0;
+}
+
 /**
- * Get classes assigned to a teacher
+ * Full teaching load: form-teacher classes + per-class subject assignments.
+ * Multiple teachers can share a class with different subjects via class_subjects.
+ */
+export async function getTeacherTeachingLoad(
+    schoolId: string,
+    staffId: string
+): Promise<TeacherTeachingLoad> {
+    try {
+        const [formClassesRes, classSubjectsRes, staffSubjectsRes] = await Promise.all([
+            supabase
+                .from('classes')
+                .select('id, name, grade_level, section')
+                .eq('school_id', schoolId)
+                .eq('class_teacher_id', staffId)
+                .eq('is_active', true)
+                .order('name', { ascending: true }),
+            supabase
+                .from('class_subjects')
+                .select(
+                    'class_id, subject_id, classes(id, name, grade_level, section), subjects(id, name, code)'
+                )
+                .eq('school_id', schoolId)
+                .eq('teacher_id', staffId),
+            supabase
+                .from('staff_subjects')
+                .select('subject_id, subjects(id, name, code)')
+                .eq('school_id', schoolId)
+                .eq('staff_id', staffId),
+        ]);
+
+        const classMap = new Map<string, TeacherClassLoad>();
+        const linkedSubjectIds = new Set<string>();
+
+        for (const cls of formClassesRes.data ?? []) {
+            classMap.set(cls.id, {
+                classId: cls.id,
+                className: cls.name,
+                gradeLevel: cls.grade_level ?? undefined,
+                section: cls.section ?? undefined,
+                studentCount: 0,
+                isFormTeacher: true,
+                subjects: [],
+            });
+        }
+
+        for (const row of classSubjectsRes.data ?? []) {
+            const classId = row.class_id as string;
+            const cls = row.classes as {
+                id: string;
+                name: string;
+                grade_level?: string;
+                section?: string;
+            } | null;
+            const sub = row.subjects as { id: string; name: string; code?: string } | null;
+            if (!cls) continue;
+
+            if (!classMap.has(classId)) {
+                classMap.set(classId, {
+                    classId,
+                    className: cls.name,
+                    gradeLevel: cls.grade_level,
+                    section: cls.section,
+                    studentCount: 0,
+                    isFormTeacher: false,
+                    subjects: [],
+                });
+            }
+
+            const entry = classMap.get(classId)!;
+            if (sub && !entry.subjects.some((s) => s.subjectId === sub.id)) {
+                entry.subjects.push({
+                    subjectId: sub.id,
+                    subjectName: sub.name,
+                    subjectCode: sub.code,
+                });
+                linkedSubjectIds.add(sub.id);
+            }
+        }
+
+        const classes = await Promise.all(
+            [...classMap.values()].map(async (entry) => ({
+                ...entry,
+                studentCount: await getClassStudentCount(schoolId, entry.classId),
+                subjects: entry.subjects.sort((a, b) =>
+                    a.subjectName.localeCompare(b.subjectName)
+                ),
+            }))
+        );
+
+        classes.sort((a, b) => a.className.localeCompare(b.className));
+
+        const generalSubjects: TeacherSubjectSlot[] = [];
+        for (const row of staffSubjectsRes.data ?? []) {
+            const sub = row.subjects as { id: string; name: string; code?: string } | null;
+            if (!sub || linkedSubjectIds.has(sub.id)) continue;
+            if (!generalSubjects.some((s) => s.subjectId === sub.id)) {
+                generalSubjects.push({
+                    subjectId: sub.id,
+                    subjectName: sub.name,
+                    subjectCode: sub.code,
+                });
+            }
+        }
+        generalSubjects.sort((a, b) => a.subjectName.localeCompare(b.subjectName));
+
+        return { classes, generalSubjects };
+    } catch (error) {
+        console.error('Get teacher teaching load error:', error);
+        return { classes: [], generalSubjects: [] };
+    }
+}
+
+/**
+ * Get classes assigned to a teacher (form teacher + subject-taught classes).
  */
 export async function getTeacherClasses(
     schoolId: string,
     teacherId: string
 ): Promise<(ClassData & { students: number })[]> {
     try {
-        const { data: classesData, error: classError } = await supabase
+        const load = await getTeacherTeachingLoad(schoolId, teacherId);
+        if (load.classes.length === 0) return [];
+
+        const { data: metaRows } = await supabase
             .from('classes')
-            .select('id, school_id, name, grade_level, section, capacity, class_teacher_id, is_active, created_at, updated_at')
+            .select('id, school_id, grade_level, section, capacity, class_teacher_id, is_active, created_at, updated_at')
             .eq('school_id', schoolId)
-            .eq('class_teacher_id', teacherId)
-            .eq('is_active', true)
-            .order('name', { ascending: true });
+            .in('id', load.classes.map((c) => c.classId));
 
-        if (classError) {
-            console.error('Error fetching teacher classes:', classError);
-            return [];
-        }
+        const metaById = Object.fromEntries((metaRows ?? []).map((r) => [r.id, r]));
 
-        if (!classesData || classesData.length === 0) {
-            return [];
-        }
-
-        // Get student counts for each class
-        const classesWithCounts = await Promise.all(
-            classesData.map(async (cls: any) => {
-                const { count, error: countError } = await supabase
-                    .from('students')
-                    .select('id', { count: 'exact' })
-                    .eq('school_id', schoolId)
-                    .eq('class_id', cls.id);
-
-                const studentCount = !countError && count ? count : 0;
-
-                return {
-                    id: cls.id,
-                    school_id: cls.school_id,
-                    name: cls.name,
-                    grade_level: cls.grade_level,
-                    section: cls.section,
-                    capacity: cls.capacity,
-                    class_teacher_id: cls.class_teacher_id,
-                    students: studentCount,
-                    is_active: cls.is_active,
-                    created_at: cls.created_at,
-                    updated_at: cls.updated_at,
-                };
-            })
-        );
-
-        return classesWithCounts;
+        return load.classes.map((entry) => {
+            const meta = metaById[entry.classId];
+            return {
+                id: entry.classId,
+                school_id: schoolId,
+                name: entry.className,
+                grade_level: entry.gradeLevel ?? meta?.grade_level ?? '',
+                section: entry.section ?? meta?.section,
+                capacity: meta?.capacity ?? 0,
+                class_teacher_id: meta?.class_teacher_id,
+                students: entry.studentCount,
+                is_active: meta?.is_active ?? true,
+                created_at: meta?.created_at ?? '',
+                updated_at: meta?.updated_at ?? '',
+            };
+        });
     } catch (error) {
         console.error('Get teacher classes error:', error);
         return [];

@@ -3,7 +3,15 @@ import { motion } from 'framer-motion';
 import { Plus, Calendar, Clock, Users, Check, FileText, Loader, AlertCircle, X } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { getTeacherClasses, getClassStudents } from '@/services/classService';
-import { createAssignment, getTeacherAssignments } from '@/services/assignmentService';
+import {
+  createAssignment,
+  getTeacherAssignments,
+  getAssignmentSubmissions,
+  teacherMarkSubmitted,
+  SUBMISSION_OPTION_LABELS,
+  type SubmissionOption,
+  type AssignmentSubmissionWithStudent,
+} from '@/services/assignmentService';
 import { supabase } from '@/lib/supabase';
 import { getCurrentTerm } from '@/utils/calendarUtils';
 
@@ -43,6 +51,11 @@ export default function AssignmentsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
+  const [managingAssignment, setManagingAssignment] = useState<Assignment | null>(null);
+  const [submissionRows, setSubmissionRows] = useState<AssignmentSubmissionWithStudent[]>([]);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [markingStudentId, setMarkingStudentId] = useState<string | null>(null);
+  const [teacherSubmitOption, setTeacherSubmitOption] = useState<SubmissionOption>('homework_completed');
 
   // Form state
   const [formData, setFormData] = useState({
@@ -101,6 +114,44 @@ export default function AssignmentsPage() {
 
     loadInitialData();
   }, [user]);
+
+  const openSubmissionManager = async (assignment: Assignment) => {
+    if (!user?.schoolId) return;
+    setManagingAssignment(assignment);
+    setLoadingSubmissions(true);
+    const rows = await getAssignmentSubmissions(
+      user.schoolId,
+      assignment.id,
+      assignment.class_id
+    );
+    setSubmissionRows(rows);
+    setLoadingSubmissions(false);
+  };
+
+  const handleTeacherMarkSubmitted = async (studentId: string) => {
+    if (!managingAssignment || !user?.schoolId) return;
+    setMarkingStudentId(studentId);
+    const result = await teacherMarkSubmitted(
+      user.schoolId,
+      managingAssignment.id,
+      studentId,
+      teacherSubmitOption
+    );
+    setMarkingStudentId(null);
+    if (result.success) {
+      setSuccessMessage('Student marked as submitted');
+      const rows = await getAssignmentSubmissions(
+        user.schoolId,
+        managingAssignment.id,
+        managingAssignment.class_id
+      );
+      setSubmissionRows(rows);
+      const updated = await getTeacherAssignments(user.schoolId, user.id);
+      setAssignments(updated);
+    } else {
+      setError(result.error || 'Failed to mark submission');
+    }
+  };
 
   const handleFormChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -361,11 +412,20 @@ export default function AssignmentsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm font-medium">
-                    {assignment.submissions || 0} / {assignment.total_students || 0}
+                <div className="text-right flex flex-col items-end gap-2">
+                  <div>
+                    <div className="text-sm font-medium">
+                      {assignment.submissions || 0} / {assignment.total_students || 0}
+                    </div>
+                    <p className="text-xs text-secondary-text">Submitted</p>
                   </div>
-                  <p className="text-xs text-secondary-text">Submitted</p>
+                  <button
+                    type="button"
+                    onClick={() => openSubmissionManager(assignment)}
+                    className="btn-secondary text-xs py-1.5 px-3"
+                  >
+                    Manage Submissions
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -502,6 +562,84 @@ export default function AssignmentsPage() {
                 </button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {managingAssignment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-2xl bg-white dark:bg-dark-bg rounded-2xl shadow-xl max-h-[85vh] flex flex-col"
+          >
+            <div className="p-6 border-b border-border dark:border-gray-800 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Submissions</h2>
+                <p className="text-sm text-secondary-text">{managingAssignment.title}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManagingAssignment(null)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 border-b border-border dark:border-gray-800">
+              <label className="label mb-1.5 block text-sm">Default mark-as-submitted option</label>
+              <select
+                className="input-field"
+                value={teacherSubmitOption}
+                onChange={(e) => setTeacherSubmitOption(e.target.value as SubmissionOption)}
+              >
+                {(Object.entries(SUBMISSION_OPTION_LABELS) as [SubmissionOption, string][]).map(
+                  ([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  )
+                )}
+              </select>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {loadingSubmissions ? (
+                <div className="flex justify-center py-8">
+                  <Loader className="w-6 h-6 animate-spin" />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {submissionRows.map((row) => (
+                    <div
+                      key={row.student_id}
+                      className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border dark:border-gray-800"
+                    >
+                      <div>
+                        <p className="font-medium text-sm">{row.student_name}</p>
+                        <p className="text-xs text-secondary-text">{row.student_number}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-2 py-1 rounded-full capitalize ${
+                          row.status === 'submitted' || row.status === 'graded'
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700'
+                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700'
+                        }`}>
+                          {row.status}
+                        </span>
+                        {row.status === 'pending' && (
+                          <button
+                            type="button"
+                            onClick={() => handleTeacherMarkSubmitted(row.student_id)}
+                            disabled={markingStudentId === row.student_id}
+                            className="btn-primary text-xs py-1 px-2 disabled:opacity-50"
+                          >
+                            {markingStudentId === row.student_id ? 'Saving...' : 'Mark Submitted'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </motion.div>
         </div>
       )}

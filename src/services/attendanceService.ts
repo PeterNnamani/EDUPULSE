@@ -158,6 +158,47 @@ export async function recordClassAttendance(
         const uniqueStudents = [...new Set(attendanceData.map((r) => r.studentId))];
         uniqueStudents.forEach((sid) => scheduleRiskRecalculation(schoolId, sid));
 
+        const { auditService } = await import('@/services/auditService');
+        void auditService.logAudit({
+            schoolId,
+            userId: markedById ?? null,
+            userType: 'staff',
+            action: 'attendance_edited',
+            entityType: 'attendance',
+            entityId: classId,
+            newValues: { classId, date, recorded: records.length },
+        });
+
+        const studentIds = attendanceData.map((r) => r.studentId);
+        const { data: studentRows } = await supabase
+            .from('students')
+            .select('id, first_name, last_name')
+            .eq('school_id', schoolId)
+            .in('id', studentIds);
+
+        const roster = attendanceData.map((record) => {
+            const student = studentRows?.find((s) => s.id === record.studentId);
+            const name = student
+                ? `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim()
+                : 'Student';
+            return {
+                studentId: record.studentId,
+                name: name || 'Student',
+                status: record.status,
+            };
+        });
+
+        const { teacherActivityService } = await import('@/services/teacherActivityService');
+        void teacherActivityService.logActivity({
+            schoolId,
+            staffId: markedById ?? null,
+            action: 'attendance_submitted',
+            entityType: 'attendance',
+            entityId: classId,
+            relatedClassId: classId,
+            details: { date, students: records.length, classId, roster },
+        });
+
         return { success: true, recorded: records.length };
     } catch (error) {
         console.error('Record class attendance error:', error);

@@ -1,5 +1,7 @@
 import { supabase } from '@/lib/supabase';
-import { AlertType } from './alertManagementService';
+import { alertManagementService, AlertType } from './alertManagementService';
+import { getParentIdsForStudent } from './notificationDispatchService';
+import { notificationService } from './notificationService';
 
 export type InterventionStatus = 'open' | 'in_progress' | 'on_hold' | 'closed' | 'escalated';
 export type InterventionCategory = 'attendance_intervention' | 'academic_intervention' | 'behaviour_intervention' | 'assignment_intervention' | 'fee_intervention' | 'general_counseling';
@@ -517,6 +519,141 @@ export const interventionService = {
         };
 
         return recommendations[alertType];
+    },
+
+    /**
+     * Create a manual intervention case (counselor-initiated, not from automated alert)
+     */
+    async createManualIntervention(
+        schoolId: string,
+        studentId: string,
+        counselorAuthId: string,
+        options: {
+            category: InterventionCategory;
+            priority: 'low' | 'medium' | 'high' | 'critical';
+            description?: string;
+            notifyParent?: boolean;
+        }
+    ): Promise<{ success: boolean; caseId?: string; error?: string }> {
+        try {
+            const { data: student } = await supabase
+                .from('students')
+                .select('first_name, last_name')
+                .eq('id', studentId)
+                .eq('school_id', schoolId)
+                .single();
+
+            if (!student) {
+                return { success: false, error: 'Student not found' };
+            }
+
+            const studentName = `${student.first_name} ${student.last_name}`;
+            const alertType = this.categoryToAlertType(options.category);
+            const riskLevel =
+                options.priority === 'critical'
+                    ? 'critical'
+                    : options.priority === 'high'
+                      ? 'high'
+                      : options.priority === 'medium'
+                        ? 'medium'
+                        : 'low';
+
+            const { category, title, description, plan, goals } = this.getInterventionDetails(
+                alertType,
+                riskLevel,
+                studentName
+            );
+
+            const caseDescription = options.description?.trim() || description;
+
+            const alertResult = await alertManagementService.createAlert({
+                schoolId,
+                studentId,
+                alertType,
+                riskLevel,
+                title: `Manual: ${title}`,
+                description: caseDescription,
+                recommendedAction: 'Counselor-initiated intervention case',
+                secondaryActions: [],
+            });
+
+            if (!alertResult.success || !alertResult.alertId) {
+                return { success: false, error: alertResult.error || 'Failed to create alert' };
+            }
+
+            const { data, error } = await supabase
+                .from('intervention_cases')
+                .insert([
+                    {
+                        school_id: schoolId,
+                        student_id: studentId,
+                        alert_id: alertResult.alertId,
+                        case_title: title,
+                        case_description: caseDescription,
+                        case_category: category,
+                        assigned_to_id: counselorAuthId,
+                        assigned_at: new Date().toISOString(),
+                        assigned_by_id: counselorAuthId,
+                        status: 'open',
+                        priority: options.priority,
+                        intervention_plan: plan,
+                        goals,
+                        expected_outcome: this.getExpectedOutcome(alertType),
+                    },
+                ])
+                .select('id')
+                .single();
+
+            if (error) {
+                return { success: false, error: error.message };
+            }
+
+            if (options.notifyParent) {
+                const parentIds = await getParentIdsForStudent(studentId);
+                for (const parentId of parentIds) {
+                    await notificationService.sendNotification({
+                        schoolId,
+                        recipientId: parentId,
+                        recipientRole: 'parent',
+                        notificationType: 'intervention_reminder',
+                        title: 'Intervention plan started',
+                        message: `An intervention plan has been started for ${studentName}.`,
+                        priority: options.priority === 'critical' ? 'critical' : 'medium',
+                        relatedStudentId: studentId,
+                        actionUrl: '/interventions',
+                    });
+                }
+            }
+
+            return { success: true, caseId: data.id };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'Unknown error',
+            };
+        }
+    },
+
+    categoryToAlertType(category: InterventionCategory): AlertType {
+        const map: Record<InterventionCategory, AlertType> = {
+            attendance_intervention: 'attendance',
+            academic_intervention: 'academic_decline',
+            behaviour_intervention: 'behaviour_incident',
+            assignment_intervention: 'missing_assignment',
+            fee_intervention: 'fee_overdue',
+            general_counseling: 'composite_risk',
+        };
+        return map[category];
+    },
+
+    uiTypeToCategory(uiType: string): InterventionCategory {
+        const map: Record<string, InterventionCategory> = {
+            'Academic Support': 'academic_intervention',
+            'Attendance Monitoring': 'attendance_intervention',
+            'Behaviour Support': 'behaviour_intervention',
+            Counseling: 'general_counseling',
+        };
+        return map[uiType] || 'general_counseling';
     },
 
     /**

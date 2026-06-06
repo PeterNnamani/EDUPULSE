@@ -254,6 +254,7 @@ export async function parentLogin(phone: string) {
                     lastName: child.last_name,
                     gender: child.gender,
                     classId: child.class_id,
+                    className: (child as { class_name?: string }).class_name,
                 })),
             },
         };

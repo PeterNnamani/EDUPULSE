@@ -18,13 +18,23 @@ export type InterventionStatus = 'open' | 'in_progress' | 'completed' | 'closed'
 
 export type NotificationType =
   | 'attendance_alert'
-  | 'grade_alert'
+  | 'academic_alert'
   | 'behaviour_alert'
+  | 'assignment_alert'
   | 'fee_reminder'
+  | 'fee_alert'
   | 'risk_alert'
   | 'intervention_reminder'
-  | 'assignment_alert'
-  | 'system';
+  | 'escalation_alert'
+  | 'academic_event'
+  | 'system_alert'
+  | 'arrival_alert'
+  | 'departure_alert'
+  | 'birthday_greeting'
+  | 'teacher_activity'
+  | 'payment_confirmation'
+  | 'reconciliation_alert'
+  | 'school_message';
 
 export interface User {
   id: string;
@@ -43,6 +53,7 @@ export interface User {
     lastName: string;
     gender: string;
     classId?: string;
+    className?: string;
   }>;
 }
 

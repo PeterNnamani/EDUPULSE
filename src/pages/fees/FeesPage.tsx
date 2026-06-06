@@ -120,7 +120,7 @@ export default function FeesPage() {
 
         const studentClass = classesData.find(c => c.id === student.class_id);
         const classFee = feesData.find(f => f.class_id === student.class_id);
-        const feeAmount = classFee?.amount || 0; // Use configured fee or 0 if none
+        const feeAmount = Number(classFee?.amount) || 0; // Use configured fee or 0 if none
 
         const balance = feeAmount - totalPaid;
         const status = balance === 0 ? 'paid' : balance < feeAmount && balance > 0 ? 'partial' : 'unpaid';
@@ -169,9 +169,10 @@ export default function FeesPage() {
     let filtered = [...feeRecords];
 
     if (searchTerm) {
+      const q = searchTerm.toLowerCase();
       filtered = filtered.filter(r =>
-        r.student.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.studentId.toLowerCase().includes(searchTerm.toLowerCase())
+        (r.student ?? '').toLowerCase().includes(q) ||
+        (r.studentId ?? '').toLowerCase().includes(q)
       );
     }
 
@@ -186,6 +187,38 @@ export default function FeesPage() {
     setFilteredRecords(filtered);
   };
 
+  const handleExportFees = () => {
+    const headers = ['Student', 'Student ID', 'Class', 'Fee Type', 'Amount', 'Paid', 'Balance', 'Status'];
+    const rows = filteredRecords.map((r) => [
+      r.student,
+      r.studentId,
+      r.class,
+      r.feeType,
+      r.amount,
+      r.paid,
+      r.balance,
+      r.status,
+    ]);
+
+    const csv = [
+      'Fee Management Export',
+      `Generated: ${new Date().toLocaleString()}`,
+      `Total Expected: ${stats.totalExpected}`,
+      `Total Collected: ${stats.totalCollected}`,
+      `Outstanding: ${stats.totalOutstanding}`,
+      '',
+      headers.join(','),
+      ...rows.map((r) => r.map((c) => `"${c}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `fees_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -194,7 +227,7 @@ export default function FeesPage() {
           <p className="text-secondary-text">Track fees and payment records</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn-secondary flex items-center gap-2">
+          <button onClick={handleExportFees} className="btn-secondary flex items-center gap-2">
             <Download className="w-4 h-4" />
             Export
           </button>

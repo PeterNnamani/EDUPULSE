@@ -4,12 +4,15 @@ import { FileText, Download, Calendar, Users, TrendingUp, AlertTriangle, DollarS
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
 import { fetchPrincipalDashboard } from '@/services/principalDashboardService';
-import jsPDF from 'jspdf';
-import * as XLSX from 'xlsx';
+import {
+  exportSchoolReport,
+  type ReportCategory,
+} from '@/services/reportExportService';
 
 interface ReportData {
   id: string;
   type: string;
+  category: ReportCategory;
   name: string;
   date: string;
   format: 'PDF' | 'Excel' | 'CSV';
@@ -21,6 +24,8 @@ export default function ReportsPage() {
   const isPrincipal = user?.role === 'principal';
   const [recentReports, setRecentReports] = useState<ReportData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState<string | null>(null);
+  const [exportError, setExportError] = useState('');
   const [schoolStats, setSchoolStats] = useState<string[]>([]);
 
   const reportTypes = [
@@ -52,125 +57,29 @@ export default function ReportsPage() {
   }, [schoolId, isPrincipal]);
 
   const downloadReport = async (report: ReportData) => {
-    try {
-      console.log('[REPORTS] Downloading report:', report.id, 'Format:', report.format);
+    if (!schoolId) return;
+    setExporting(report.id);
+    setExportError('');
 
-      if (report.format === 'PDF') {
-        // Create a proper PDF using jsPDF
-        const doc = new jsPDF();
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        let yPosition = 20;
-
-        // Title
-        doc.setFontSize(18);
-        doc.text(report.name, pageWidth / 2, yPosition, { align: 'center' });
-        yPosition += 15;
-
-        // Separator
-        doc.setDrawColor(200);
-        doc.line(20, yPosition, pageWidth - 20, yPosition);
-        yPosition += 10;
-
-        // Report Info
-        doc.setFontSize(12);
-        doc.text(`Type: ${report.type}`, 20, yPosition);
-        yPosition += 8;
-        doc.text(`Date: ${report.date}`, 20, yPosition);
-        yPosition += 8;
-        doc.text(`Generated: ${new Date().toLocaleString()}`, 20, yPosition);
-        yPosition += 15;
-
-        // Content
-        doc.setFontSize(10);
-        const content = [
-          'EduPulse — School Report',
-          '',
-          `Report: ${report.name}`,
-          `Type: ${report.type}`,
-          `Date: ${report.date}`,
-          '',
-          ...(schoolStats.length ? ['Live school snapshot:', ...schoolStats.map((s) => `• ${s}`), ''] : []),
-          'Data source: EduPulse database (live records)',
-          'Generated on demand for leadership review.',
-        ];
-
-        content.forEach(line => {
-          if (yPosition > pageHeight - 20) {
-            doc.addPage();
-            yPosition = 20;
-          }
-          doc.text(line, 20, yPosition);
-          yPosition += 6;
-        });
-
-        // Save
-        doc.save(`${report.name.replace(/\s+/g, '_')}.pdf`);
-        console.log('[REPORTS] PDF downloaded:', report.name);
-      } else if (report.format === 'Excel') {
-        // Create Excel file
-        const ws = XLSX.utils.aoa_to_sheet([
-          ['REPORT: ' + report.name],
-          [],
-          ['Report Information'],
-          ['Field', 'Value'],
-          ['Report Name', report.name],
-          ['Type', report.type],
-          ['Date', report.date],
-          ['Generated', new Date().toLocaleString()],
-          [],
-          ['Report Details'],
-          ['This is a school management report generated from EduPulse'],
-          ['Data Source: EduPulse Database'],
-          ['Status: Generated on demand'],
-          [],
-          ['For detailed information, visit the EduPulse dashboard']
-        ]);
-
-        // Set column widths
-        ws['!cols'] = [{ wch: 25 }, { wch: 50 }];
-
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Report');
-        XLSX.writeFile(wb, `${report.name.replace(/\s+/g, '_')}.xlsx`);
-        console.log('[REPORTS] Excel downloaded:', report.name);
-      } else if (report.format === 'CSV') {
-        // Create CSV file
-        const csvContent = [
-          ['REPORT: ' + report.name],
-          [],
-          ['Report Information'],
-          ['Field', 'Value'],
-          ['Report Name', report.name],
-          ['Type', report.type],
-          ['Date', report.date],
-          ['Generated', new Date().toLocaleString()],
-          [],
-          ['Report Details'],
-          ['School management report generated from EduPulse'],
-          ['Data Source: EduPulse Database'],
-          ['Status: Generated on demand'],
-          [],
-          ['For detailed information, visit the EduPulse dashboard']
-        ];
-
-        const csv = csvContent.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', `${report.name.replace(/\s+/g, '_')}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        console.log('[REPORTS] CSV downloaded:', report.name);
-      }
-
-      console.log('[REPORTS] Download started for:', report.name);
-    } catch (error) {
-      console.error('[REPORTS] Error downloading report:', error);
+    const result = await exportSchoolReport(schoolId, report.category, report.format);
+    if (!result.success) {
+      setExportError(result.error || 'Export failed');
     }
+    setExporting(null);
+  };
+
+  const generateReport = async (category: ReportCategory, name: string) => {
+    if (!schoolId) return;
+    setExporting(category);
+    setExportError('');
+
+    const result = await exportSchoolReport(schoolId, category, 'PDF');
+    if (!result.success) {
+      setExportError(result.error || 'Export failed');
+    } else {
+      await loadReports();
+    }
+    setExporting(null);
   };
 
   const loadReports = async () => {
@@ -193,6 +102,7 @@ export default function ReportsPage() {
           generatedReports.push({
             id: `att-${record.id}`,
             type: 'Attendance',
+            category: 'attendance',
             name: `Attendance Report - ${new Date(record.created_at).toLocaleDateString()}`,
             date: new Date(record.created_at).toISOString().split('T')[0],
             format: 'PDF',
@@ -213,6 +123,7 @@ export default function ReportsPage() {
           generatedReports.push({
             id: `grade-${record.id}`,
             type: 'Academic',
+            category: 'academic',
             name: `Academic Report - ${new Date(record.created_at).toLocaleDateString()}`,
             date: new Date(record.created_at).toISOString().split('T')[0],
             format: 'PDF',
@@ -233,6 +144,7 @@ export default function ReportsPage() {
           generatedReports.push({
             id: `behav-${record.id}`,
             type: 'Behaviour',
+            category: 'behaviour',
             name: `Behaviour Report - ${new Date(record.created_at).toLocaleDateString()}`,
             date: new Date(record.created_at).toISOString().split('T')[0],
             format: 'PDF',
@@ -270,6 +182,10 @@ export default function ReportsPage() {
         </button>
       </div>
 
+      {exportError && (
+        <p className="text-sm text-red-600 dark:text-red-400">{exportError}</p>
+      )}
+
       {/* Report Types Grid */}
       <div>
         <h2 className="text-lg font-semibold mb-4">Available Report Types</h2>
@@ -288,9 +204,18 @@ export default function ReportsPage() {
                   <div className="p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
                     <Icon className="w-6 h-6" />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-semibold">{report.name}</h3>
                     <p className="text-sm text-secondary-text">{report.description}</p>
+                    <button
+                      type="button"
+                      onClick={() => generateReport(report.id as ReportCategory, report.name)}
+                      disabled={exporting === report.id}
+                      className="mt-3 flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+                    >
+                      <Download className="w-4 h-4" />
+                      {exporting === report.id ? 'Generating...' : 'Generate PDF'}
+                    </button>
                   </div>
                 </div>
               </motion.div>
@@ -353,10 +278,11 @@ export default function ReportsPage() {
                     <td className="py-3 px-4">
                       <button
                         onClick={() => downloadReport(report)}
-                        className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline text-sm transition-colors"
+                        disabled={exporting === report.id}
+                        className="flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:underline text-sm transition-colors disabled:opacity-50"
                       >
                         <Download className="w-4 h-4" />
-                        Download
+                        {exporting === report.id ? 'Exporting...' : 'Download'}
                       </button>
                     </td>
                   </tr>

@@ -4,6 +4,7 @@ import { CalendarDays, CheckCircle, XCircle, Clock, TrendingUp } from 'lucide-re
 import { format } from 'date-fns';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
+import ParentChildPageHeader from '@/components/parent/ParentChildPageHeader';
 
 interface AttendanceRecord {
     id: string;
@@ -100,36 +101,7 @@ export default function ParentAttendance() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-            >
-                <h1 className="text-3xl font-bold">Attendance</h1>
-                <p className="text-secondary-text mt-1">View {selectedChildData?.firstName}'s attendance record</p>
-            </motion.div>
-
-            {/* Child Selector */}
-            {user?.children && user.children.length > 1 && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="card"
-                >
-                    <label className="block text-sm font-semibold mb-3">Select Child</label>
-                    <select
-                        value={selectedParentChildId || ''}
-                        onChange={(e) => setSelectedParentChildId(e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg bg-secondary-bg dark:bg-dark-card border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                        {user.children.map((child: any) => (
-                            <option key={child.id} value={child.id}>
-                                {child.firstName} {child.lastName}
-                            </option>
-                        ))}
-                    </select>
-                </motion.div>
-            )}
+            <ParentChildPageHeader title="Attendance" subtitleSuffix="attendance record" />
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

@@ -3,6 +3,9 @@ import { motion } from 'framer-motion';
 import { BookOpen, Award, TrendingUp } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
+import PreschoolReportCard from '@/components/reports/PreschoolReportCard';
+import { formatDate } from '@/utils/displayUtils';
+import ParentChildPageHeader from '@/components/parent/ParentChildPageHeader';
 
 interface GradeRecord {
     id: string;
@@ -18,6 +21,7 @@ export default function ParentGrades() {
     const { user, selectedParentChildId, setSelectedParentChildId } = useAppStore();
     const [grades, setGrades] = useState<GradeRecord[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isEarlyYears, setIsEarlyYears] = useState(false);
 
     const selectedChildData = user?.children?.find((c: any) => c.id === selectedParentChildId);
 
@@ -59,15 +63,41 @@ export default function ParentGrades() {
         fetchGrades();
     }, [selectedParentChildId, user?.schoolId]);
 
+    // Detect whether the selected child is in an early-years (Nursery/KG) class.
+    useEffect(() => {
+        const checkEarlyYears = async () => {
+            if (!selectedParentChildId || !user?.schoolId) {
+                setIsEarlyYears(false);
+                return;
+            }
+            const { data: student } = await supabase
+                .from('students')
+                .select('class_id')
+                .eq('id', selectedParentChildId)
+                .maybeSingle();
+            if (!student?.class_id) {
+                setIsEarlyYears(false);
+                return;
+            }
+            const { data: cls } = await supabase
+                .from('classes')
+                .select('is_early_years')
+                .eq('id', student.class_id)
+                .maybeSingle();
+            setIsEarlyYears(!!cls?.is_early_years);
+        };
+        void checkEarlyYears();
+    }, [selectedParentChildId, user?.schoolId]);
+
     const stats = {
         average: grades.length > 0
-            ? Math.round(grades.reduce((sum, g) => sum + g.score, 0) / grades.length)
+            ? Math.round(grades.reduce((sum, g) => sum + (Number(g.score) || 0), 0) / grades.length)
             : 0,
         highest: grades.length > 0
-            ? Math.max(...grades.map(g => g.score))
+            ? Math.max(...grades.map(g => Number(g.score) || 0))
             : 0,
         lowest: grades.length > 0
-            ? Math.min(...grades.map(g => g.score))
+            ? Math.min(...grades.map(g => Number(g.score) || 0))
             : 0,
         totalGrades: grades.length,
     };
@@ -88,37 +118,18 @@ export default function ParentGrades() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-            >
-                <h1 className="text-3xl font-bold">Grades & Performance</h1>
-                <p className="text-secondary-text mt-1">View {selectedChildData?.firstName}'s academic performance</p>
-            </motion.div>
+            <ParentChildPageHeader title="Grades & Performance" subtitleSuffix="academic performance" />
 
-            {/* Child Selector */}
-            {user?.children && user.children.length > 1 && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="card"
-                >
-                    <label className="block text-sm font-semibold mb-3">Select Child</label>
-                    <select
-                        value={selectedParentChildId || ''}
-                        onChange={(e) => setSelectedParentChildId(e.target.value)}
-                        className="w-full px-4 py-2 rounded-lg bg-secondary-bg dark:bg-dark-card border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                        {user.children.map((child: any) => (
-                            <option key={child.id} value={child.id}>
-                                {child.firstName} {child.lastName}
-                            </option>
-                        ))}
-                    </select>
-                </motion.div>
+            {isEarlyYears && user?.schoolId && selectedParentChildId && (
+                <PreschoolReportCard
+                    schoolId={user.schoolId}
+                    studentId={selectedParentChildId}
+                    childName={selectedChildData?.firstName}
+                />
             )}
 
+            {!isEarlyYears && (
+            <>
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <motion.div
@@ -235,7 +246,7 @@ export default function ParentGrades() {
                                         </td>
                                         <td className="py-3 px-4 text-sm">{grade.term || '-'}</td>
                                         <td className="py-3 px-4 text-sm text-secondary-text">
-                                            {new Date(grade.date).toLocaleDateString()}
+                                            {formatDate(grade.date)}
                                         </td>
                                     </tr>
                                 ))}
@@ -244,6 +255,8 @@ export default function ParentGrades() {
                     </div>
                 )}
             </motion.div>
+            </>
+            )}
         </div>
     );
 }

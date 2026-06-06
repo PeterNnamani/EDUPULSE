@@ -5,6 +5,10 @@ import { CalendarDays, ClipboardList, AlertTriangle, BookOpen, TrendingUp, Arrow
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
 import { getStudentAssignments } from '@/services/assignmentService';
+import VirtualAccountCard from '@/components/finance/VirtualAccountCard';
+import { formatDate, getInitials } from '@/utils/displayUtils';
+import { useParentChildClasses, useSelectedChildClassName } from '@/hooks/useParentChildClasses';
+import ParentChildClassBadge from '@/components/parent/ParentChildClassBadge';
 
 interface ChildStats {
   [key: string]: {
@@ -24,6 +28,7 @@ interface Child {
   lastName: string;
   gender: string;
   classId?: string;
+  className?: string;
 }
 
 interface Assignment {
@@ -293,7 +298,15 @@ export default function ParentDashboard() {
     };
   }, []);
 
+  const childClassNames = useParentChildClasses();
+  const selectedChildClassName = useSelectedChildClassName();
   const selectedChild = user?.children?.find((c: Child) => c.id === selectedParentChildId);
+
+  const childLabel = (child: Child) => {
+    const cls = child.className ?? childClassNames[child.id];
+    const name = `${child.firstName} ${child.lastName}`;
+    return cls ? `${name} · ${cls}` : name;
+  };
   const stats = childStats[selectedParentChildId || ''] || {
     attendance: { present: 0, absent: 0, late: 0, percentage: 0 },
     averageGrade: 0,
@@ -330,13 +343,8 @@ export default function ParentDashboard() {
           </div>
           <h3 className="text-lg font-semibold mb-2">No Children Registered Yet</h3>
           <p className="text-secondary-text mb-6">
-            Your phone number ({user?.phone}) is not linked to any student records. Please contact your school administrator to register your child.
+            Your account is not linked to any student records yet. Please contact your school administrator to link your child.
           </p>
-          <div className="text-sm text-secondary-text">
-            <p>Debugging Info:</p>
-            <p className="font-mono text-xs mt-2">Phone: {user?.phone}</p>
-            <p className="font-mono text-xs">User ID: {user?.id}</p>
-          </div>
         </motion.div>
       </div>
     );
@@ -355,9 +363,22 @@ export default function ParentDashboard() {
             <h1 className="text-2xl font-bold mb-2">Welcome, {user?.fullName}</h1>
             <p className="text-gray-300 dark:text-gray-600">
               {user?.children && user.children.length === 1
-                ? `Monitor ${selectedChild?.firstName}'s academic progress`
+                ? selectedChildClassName
+                  ? `Monitor ${selectedChild?.firstName}'s progress in ${selectedChildClassName}`
+                  : `Monitor ${selectedChild?.firstName}'s academic progress`
                 : `Monitor your ${user?.children?.length} children's academic progress`}
             </p>
+            {user?.children && user.children.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {user.children.map((child: Child) => (
+                  <ParentChildClassBadge
+                    key={child.id}
+                    className={child.className ?? childClassNames[child.id]}
+                    size="sm"
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Child Selector for Multiple Children */}
@@ -367,8 +388,13 @@ export default function ParentDashboard() {
                 onClick={() => setOpenChildSelector(!openChildSelector)}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
               >
-                <span className="text-sm">
-                  {selectedChild?.firstName} {selectedChild?.lastName}
+                <span className="text-sm text-left">
+                  <span className="block">{selectedChild?.firstName} {selectedChild?.lastName}</span>
+                  {selectedChildClassName && (
+                    <span className="block text-xs text-gray-400 dark:text-gray-500">
+                      {selectedChildClassName}
+                    </span>
+                  )}
                 </span>
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -387,8 +413,7 @@ export default function ParentDashboard() {
                         : ''
                         }`}
                     >
-                      {child.firstName} {child.lastName}
-                      {child.classId && <span className="text-xs text-gray-400 dark:text-gray-600 ml-2">({child.classId})</span>}
+                      {childLabel(child)}
                     </button>
                   ))}
                 </div>
@@ -478,11 +503,14 @@ export default function ParentDashboard() {
           >
             <div className="flex items-center gap-4 mb-6">
               <div className="w-16 h-16 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-bold text-xl">
-                {selectedChild?.firstName.charAt(0)}{selectedChild?.lastName.charAt(0)}
+                {getInitials(selectedChild?.firstName, selectedChild?.lastName)}
               </div>
               <div className="flex-1">
                 <h2 className="text-2xl font-bold">{selectedChild?.firstName} {selectedChild?.lastName}</h2>
                 <p className="text-secondary-text">Student ID: {selectedChild?.studentId}</p>
+                <div className="mt-2">
+                  <ParentChildClassBadge className={selectedChildClassName} />
+                </div>
               </div>
             </div>
 
@@ -553,7 +581,7 @@ export default function ParentDashboard() {
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm truncate">{assignment.title}</p>
                           <p className="text-xs text-secondary-text mt-1">
-                            Due: {new Date(assignment.due_date).toLocaleDateString()}
+                            Due: {formatDate(assignment.due_date)}
                           </p>
                         </div>
                         <span
@@ -575,6 +603,11 @@ export default function ParentDashboard() {
               <p className="text-center text-secondary-text py-4">No assignments yet</p>
             )}
           </motion.div>
+
+          {/* Virtual Account for fee payments */}
+          {user?.schoolId && selectedParentChildId && (
+            <VirtualAccountCard schoolId={user.schoolId} studentId={selectedParentChildId} />
+          )}
 
           {/* Quick Action Links */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

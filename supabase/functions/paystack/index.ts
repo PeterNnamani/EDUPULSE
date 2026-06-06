@@ -6,10 +6,22 @@ const corsHeaders = {
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface PlanPayload {
+    plan: string;
+    amount: number;
+    currency?: string;
+    billingCycle: string;
+    startDate: string;
+    endDate: string;
+    maxStudents: number;
+    autoRenew: boolean;
+}
+
 interface PaystackVerifyRequest {
     reference: string;
     schoolId: string;
-    email: string;
+    email?: string;
+    plan?: PlanPayload;
 }
 
 interface PaystackVerifyResponse {
@@ -22,13 +34,6 @@ interface PaystackVerifyResponse {
         paid_at: string;
         channel: string;
         currency: string;
-        authorization?: {
-            authorization_code: string;
-            card_type: string;
-            last4: string;
-            exp_month: string;
-            exp_year: string;
-        };
     };
 }
 
@@ -54,7 +59,7 @@ async function verifyWithPaystack(reference: string): Promise<{ verified: boolea
     if (!PAYSTACK_SECRET_KEY) {
         return {
             verified: false,
-            error: "Paystack secret key not configured",
+            error: "Paystack secret key not configured on server. Add PAYSTACK_SECRET_KEY in Supabase Edge Function secrets.",
         };
     }
 
@@ -70,7 +75,7 @@ async function verifyWithPaystack(reference: string): Promise<{ verified: boolea
 
         const data = (await response.json()) as PaystackVerifyResponse;
 
-        if (!response.ok || !data.status) {
+        if (!response.ok || !data.status || data.data?.reference !== reference) {
             return {
                 verified: false,
                 response: data,
@@ -78,141 +83,107 @@ async function verifyWithPaystack(reference: string): Promise<{ verified: boolea
             };
         }
 
-        return {
-            verified: true,
-            response: data,
-        };
+        return { verified: true, response: data };
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown Paystack API error";
-        return {
-            verified: false,
-            error: errorMessage,
-        };
+        return { verified: false, error: errorMessage };
     }
 }
 
-async function updateSubscriptionRecord(
-    supabase: any,
+async function activateSchool(supabase: ReturnType<typeof createClient>, schoolId: string) {
+    await supabase
+        .from("schools")
+        .update({ subscription_status: "active", updated_at: new Date().toISOString() })
+        .eq("id", schoolId);
+}
+
+async function fulfillSubscription(
+    supabase: ReturnType<typeof createClient>,
     schoolId: string,
     reference: string,
-    paystackResponse: PaystackVerifyResponse
+    paystackResponse: PaystackVerifyResponse,
+    plan?: PlanPayload
 ): Promise<{ success: boolean; subscriptionId?: string; error?: string }> {
-    try {
-        // Check if subscription with this payment_reference already exists
-        const { data: existingSubscription, error: selectError } = await supabase
-            .from("subscriptions")
-            .select("id, school_id")
-            .eq("payment_reference", reference)
-            .eq("school_id", schoolId)
-            .maybeSingle();
+    const { data: existing, error: selectError } = await supabase
+        .from("subscriptions")
+        .select("id, status, school_id")
+        .eq("payment_reference", reference)
+        .eq("school_id", schoolId)
+        .maybeSingle();
 
-        if (selectError && selectError.code !== "PGRST116") {
-            return {
-                success: false,
-                error: `Database query error: ${selectError.message}`,
-            };
-        }
+    if (selectError) {
+        return { success: false, error: `Database query error: ${selectError.message}` };
+    }
 
-        if (existingSubscription) {
-            const { data: activated, error: activateError } = await supabase
+    if (existing) {
+        if (existing.status !== "active") {
+            const { error: updateError } = await supabase
                 .from("subscriptions")
-                .update({
-                    status: "active",
-                    updated_at: new Date().toISOString(),
-                })
-                .eq("id", existingSubscription.id)
-                .eq("school_id", schoolId)
-                .neq("status", "active")
-                .select("id");
+                .update({ status: "active", updated_at: new Date().toISOString() })
+                .eq("id", existing.id);
 
-            if (activateError) {
-                return {
-                    success: false,
-                    error: `Failed to activate existing subscription: ${activateError.message}`,
-                };
+            if (updateError) {
+                return { success: false, error: `Failed to activate subscription: ${updateError.message}` };
             }
-
-            await supabase
-                .from("schools")
-                .update({
-                    subscription_status: "active",
-                    updated_at: new Date().toISOString(),
-                })
-                .eq("id", schoolId);
-
-            return {
-                success: true,
-                subscriptionId: existingSubscription.id,
-            };
         }
+        await activateSchool(supabase, schoolId);
+        return { success: true, subscriptionId: existing.id };
+    }
 
-        // Find the subscription with matching reference that hasn't been fully updated yet
-        const { data: subscriptions, error: fetchError } = await supabase
-            .from("subscriptions")
-            .select("id, school_id, plan, billing_cycle, amount")
-            .eq("payment_reference", reference)
-            .limit(1);
-
-        if (fetchError) {
-            return {
-                success: false,
-                error: `Failed to fetch subscription: ${fetchError.message}`,
-            };
-        }
-
-        if (!subscriptions || subscriptions.length === 0) {
-            return {
-                success: false,
-                error: `No subscription found with payment reference: ${reference}`,
-            };
-        }
-
-        const subscription = subscriptions[0];
-
-        // Verify school_id matches
-        if (subscription.school_id !== schoolId) {
-            return {
-                success: false,
-                error: "School ID mismatch - potential tenant isolation breach",
-            };
-        }
-
-        // Update subscription status to 'active' and verify the payment
-        const { data: updateData, error: updateError } = await supabase
-            .from("subscriptions")
-            .update({
-                status: "active",
-                updated_at: new Date().toISOString(),
-            })
-            .eq("id", subscription.id)
-            .eq("school_id", schoolId)
-            .select("id");
-
-        if (updateError) {
-            return {
-                success: false,
-                error: `Failed to update subscription: ${updateError.message}`,
-            };
-        }
-
-        if (!updateData || updateData.length === 0) {
-            return {
-                success: false,
-                error: "Subscription update returned no records (RLS policy may have blocked it)",
-            };
-        }
-
-        return {
-            success: true,
-            subscriptionId: updateData[0].id,
-        };
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error during subscription update";
+    if (!plan) {
         return {
             success: false,
-            error: errorMessage,
+            error: "No subscription row found. Pass plan details from the client so the server can create the record.",
         };
     }
+
+    const paidKobo = paystackResponse.data?.amount ?? 0;
+    const expectedKobo = Math.round(plan.amount * 100);
+    if (paidKobo > 0 && paidKobo < expectedKobo) {
+        return {
+            success: false,
+            error: `Payment amount mismatch. Expected ${expectedKobo} kobo, got ${paidKobo}.`,
+        };
+    }
+
+    const { data: inserted, error: insertError } = await supabase
+        .from("subscriptions")
+        .insert({
+            school_id: schoolId,
+            plan: plan.plan,
+            amount: plan.amount,
+            currency: plan.currency ?? "NGN",
+            payment_reference: reference,
+            status: "active",
+            start_date: plan.startDate,
+            end_date: plan.endDate,
+            billing_cycle: plan.billingCycle,
+            max_students: plan.maxStudents,
+            auto_renew: plan.autoRenew,
+        })
+        .select("id")
+        .single();
+
+    if (insertError) {
+        return { success: false, error: `Failed to create subscription: ${insertError.message}` };
+    }
+
+    const invoiceNumber = `INV-${schoolId.slice(0, 8)}-${Date.now()}`;
+    await supabase.from("invoices").insert({
+        school_id: schoolId,
+        subscription_id: inserted.id,
+        invoice_number: invoiceNumber,
+        amount: plan.amount,
+        currency: plan.currency ?? "NGN",
+        due_date: plan.startDate,
+        paid_at: paystackResponse.data?.paid_at ?? new Date().toISOString(),
+        status: "paid",
+        payment_method: "paystack",
+        payment_reference: reference,
+    });
+
+    await activateSchool(supabase, schoolId);
+    return { success: true, subscriptionId: inserted.id };
 }
 
 Deno.serve({ auth: false }, async (req: Request) => {
@@ -229,103 +200,60 @@ Deno.serve({ auth: false }, async (req: Request) => {
     };
 
     const addLog = (message: string, level: "info" | "warn" | "error" = "info", details?: Record<string, unknown>) => {
-        result.logs.push({
-            timestamp: new Date().toISOString(),
-            message,
-            level,
-            details,
-        });
+        result.logs.push({ timestamp: new Date().toISOString(), message, level, details });
         console.log(`[${level.toUpperCase()}] ${message}`, details ? JSON.stringify(details) : "");
     };
 
     try {
-        addLog("Payment verification request received");
-
         const body = (await req.json()) as PaystackVerifyRequest;
-        const { reference, schoolId, email } = body;
+        const { reference, schoolId, email, plan } = body;
 
         if (!reference || !schoolId) {
             throw new Error("Missing required fields: reference and schoolId");
         }
 
         result.transactionReference = reference;
-        addLog("Request validated", "info", { reference, schoolId, email });
+        addLog("Request validated", "info", { reference, schoolId, email, hasPlan: !!plan });
 
-        // Step 1: Verify with Paystack
-        addLog("Starting Paystack API verification", "info", { reference });
         const paystackResult = await verifyWithPaystack(reference);
-
         if (!paystackResult.verified) {
-            addLog("Paystack verification failed", "error", {
-                error: paystackResult.error,
-                response: paystackResult.response,
-            });
             result.paystackResponse = paystackResult.response;
             return new Response(
-                JSON.stringify({
-                    ...result,
-                    error: `Paystack verification failed: ${paystackResult.error}`,
-                }),
-                {
-                    headers: { ...corsHeaders, "Content-Type": "application/json" },
-                    status: 400,
-                }
+                JSON.stringify({ ...result, error: `Paystack verification failed: ${paystackResult.error}` }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
             );
         }
 
         result.paystackVerified = true;
         result.paystackResponse = paystackResult.response;
-        addLog("Paystack verification successful", "info", {
-            transactionId: paystackResult.response?.data?.id,
-            amount: paystackResult.response?.data?.amount,
-            paidAt: paystackResult.response?.data?.paid_at,
-        });
 
-        // Step 2: Initialize Supabase client
         const supabaseUrl = Deno.env.get("SUPABASE_URL");
         const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
         if (!supabaseUrl || !supabaseServiceKey) {
-            throw new Error("Supabase configuration not found");
+            throw new Error(
+                "Supabase URL/service role missing. Do not add SUPABASE_* as custom secrets — they are injected automatically when the function is deployed."
+            );
         }
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
-        addLog("Supabase client initialized");
-
-        // Step 3: Update subscription record
-        addLog("Updating subscription record", "info", { schoolId, reference });
-        const subscriptionResult = await updateSubscriptionRecord(
+        const subscriptionResult = await fulfillSubscription(
             supabase,
             schoolId,
             reference,
-            paystackResult.response!
+            paystackResult.response!,
+            plan
         );
 
         if (!subscriptionResult.success) {
-            addLog("Subscription update failed", "error", {
-                error: subscriptionResult.error,
-            });
             return new Response(
-                JSON.stringify({
-                    ...result,
-                    error: subscriptionResult.error,
-                }),
-                {
-                    headers: { ...corsHeaders, "Content-Type": "application/json" },
-                    status: 400,
-                }
+                JSON.stringify({ ...result, error: subscriptionResult.error }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
             );
         }
 
         result.subscriptionUpdated = true;
         result.subscriptionId = subscriptionResult.subscriptionId;
-        addLog("Subscription successfully updated", "info", {
-            subscriptionId: subscriptionResult.subscriptionId,
-        });
-
-        // Step 4: Return success
         result.success = true;
-        addLog("Payment verification complete", "info");
 
         return new Response(JSON.stringify(result), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -333,20 +261,10 @@ Deno.serve({ auth: false }, async (req: Request) => {
         });
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
-        addLog("Payment verification failed with exception", "error", {
-            error: errorMessage,
-            stack: error instanceof Error ? error.stack : undefined,
+        addLog("Payment verification failed", "error", { error: errorMessage });
+        return new Response(JSON.stringify({ ...result, error: errorMessage }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 500,
         });
-
-        return new Response(
-            JSON.stringify({
-                ...result,
-                error: errorMessage,
-            }),
-            {
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-                status: 500,
-            }
-        );
     }
 });

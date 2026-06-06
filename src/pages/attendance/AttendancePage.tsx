@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { useAppStore } from '@/store';
 import { getTeacherClasses, getClassStudents } from '@/services/classService';
 import { recordClassAttendance, getClassAttendanceForDate } from '@/services/attendanceService';
+import { getInitials } from '@/utils/displayUtils';
 
 interface Student {
   id: string;
@@ -304,7 +305,7 @@ export default function AttendancePage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center font-medium text-sm">
-                          {`${student.first_name[0]}${student.last_name[0]}`.toUpperCase()}
+                          {getInitials(student.first_name, student.last_name)}
                         </div>
                         <div>
                           <span className="font-medium">{fullName}</span>

@@ -264,6 +264,10 @@ export default function SettingsPage() {
             </motion.div>
           )}
 
+          {activeTab === 'payments' && (
+            <MonnifySettings schoolId={user?.schoolId ?? null} />
+          )}
+
           {activeTab === 'notifications' && prefs && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
               <h2 className="font-semibold mb-2">Notification preferences</h2>
@@ -357,6 +361,136 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function MonnifySettings({ schoolId }: { schoolId: string | null }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    apiKey: '',
+    secretKey: '',
+    contractCode: '',
+    baseUrl: 'https://api.monnify.com',
+    isActive: false,
+  });
+
+  useEffect(() => {
+    if (!schoolId) {
+      setLoading(false);
+      return;
+    }
+    import('@/services/monnifyService').then(({ monnifyService }) => {
+      monnifyService.getConfig(schoolId).then((cfg) => {
+        if (cfg) {
+          setForm({
+            apiKey: cfg.apiKey,
+            secretKey: cfg.secretKey,
+            contractCode: cfg.contractCode,
+            baseUrl: cfg.baseUrl,
+            isActive: cfg.isActive,
+          });
+        }
+        setLoading(false);
+      });
+    });
+  }, [schoolId]);
+
+  const handleSave = async () => {
+    if (!schoolId) return;
+    setSaving(true);
+    setMsg(null);
+    const { monnifyService } = await import('@/services/monnifyService');
+    const result = await monnifyService.saveConfig(schoolId, form);
+    setSaving(false);
+    setMsg(result.success ? 'Monnify settings saved.' : result.error ?? 'Failed to save.');
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
+      <h2 className="font-semibold mb-2">Monnify virtual accounts</h2>
+      <p className="text-sm text-secondary-text mb-6">
+        Connect your school's Monnify account to auto-generate dedicated virtual accounts for
+        students and reconcile payments automatically. Keys are stored securely and used only by
+        the server.
+      </p>
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="w-8 h-8 animate-spin" />
+        </div>
+      ) : (
+        <div className="space-y-4 max-w-xl">
+          <div>
+            <label className="label mb-1.5 block">API Key</label>
+            <input
+              className="input-field"
+              value={form.apiKey}
+              onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+              placeholder="MK_PROD_..."
+            />
+          </div>
+          <div>
+            <label className="label mb-1.5 block">Secret Key</label>
+            <input
+              type="password"
+              className="input-field"
+              value={form.secretKey}
+              onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
+              placeholder="••••••••"
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label className="label mb-1.5 block">Contract Code</label>
+            <input
+              className="input-field"
+              value={form.contractCode}
+              onChange={(e) => setForm({ ...form, contractCode: e.target.value })}
+              placeholder="1234567890"
+            />
+          </div>
+          <div>
+            <label className="label mb-1.5 block">Base URL</label>
+            <input
+              className="input-field"
+              value={form.baseUrl}
+              onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+            />
+          </div>
+          <div className="flex items-center justify-between p-4 rounded-xl bg-secondary-bg dark:bg-dark-card">
+            <div>
+              <p className="font-medium">Enable Monnify</p>
+              <p className="text-sm text-secondary-text">
+                Turn on to start generating virtual accounts for new students.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={form.isActive}
+                onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+              />
+              <div className="w-11 h-6 bg-gray-200 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black" />
+            </label>
+          </div>
+          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-800 dark:text-blue-200">
+            Set your Monnify webhook URL to:{' '}
+            <code className="break-all">{`${import.meta.env.VITE_SUPABASE_URL ?? '<SUPABASE_URL>'}/functions/v1/monnify-webhook`}</code>
+          </div>
+          {msg && (
+            <div className="text-sm text-green-700 dark:text-green-300">{msg}</div>
+          )}
+          <div className="flex justify-end">
+            <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2">
+              <Save className="w-4 h-4" />
+              {saving ? 'Saving…' : 'Save Monnify settings'}
+            </button>
+          </div>
+        </div>
+      )}
+    </motion.div>
   );
 }
 

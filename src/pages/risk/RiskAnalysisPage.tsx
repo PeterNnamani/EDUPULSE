@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { AlertTriangle, TrendingUp, Users, Activity, BarChart3, Loader } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, PieChart as RechartsPie, Pie, Cell } from 'recharts';
@@ -17,13 +18,14 @@ interface RiskStudent {
 
 export default function RiskAnalysisPage() {
   const { user } = useAppStore();
+  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [riskFactors, setRiskFactors] = useState<any[]>([
-    { factor: 'Attendance', value: 65 },
-    { factor: 'Academic', value: 58 },
-    { factor: 'Behaviour', value: 72 },
-    { factor: 'Assignments', value: 68 },
-    { factor: 'Fee Payment', value: 45 },
+    { factor: 'Attendance', value: 0 },
+    { factor: 'Academic', value: 0 },
+    { factor: 'Behaviour', value: 0 },
+    { factor: 'Assignments', value: 0 },
+    { factor: 'Fee Payment', value: 0 },
   ]);
   const [riskDistribution, setRiskDistribution] = useState<any[]>([
     { name: 'Low Risk', value: 0, color: '#22C55E' },
@@ -349,7 +351,10 @@ export default function RiskAnalysisPage() {
                     <p key={idx} className="text-xs text-secondary-text">• {factor}</p>
                   ))}
                 </div>
-                <button className="w-full mt-3 btn-secondary text-sm py-2">
+                <button
+                  onClick={() => navigate(`/interventions?new=1&studentId=${student.id}`)}
+                  className="w-full mt-3 btn-secondary text-sm py-2"
+                >
                   Create Intervention
                 </button>
               </div>

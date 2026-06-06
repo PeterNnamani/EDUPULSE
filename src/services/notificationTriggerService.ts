@@ -486,7 +486,7 @@ export const notificationTriggerService = {
                 await notificationService.sendNotification({
                     schoolId,
                     recipientId: financeId,
-                    recipientRole: 'finance_officer' as UserRole,
+                    recipientRole: 'finance' as UserRole,
                     notificationType: 'fee_alert',
                     title: titleMap[eventType],
                     message,
@@ -608,6 +608,162 @@ export const notificationTriggerService = {
             }
         } catch (error) {
             console.error('[NOTIFICATION_TRIGGER] Error on student enrollment:', error);
+        }
+    },
+
+    /**
+     * Trigger student arrival notification (Teacher-on-duty attendance).
+     * Recipients: Parents
+     */
+    async onStudentArrival(
+        schoolId: string,
+        studentId: string,
+        studentName: string,
+        parentIds: string[],
+        arrivalTime: string,
+        isLate: boolean
+    ): Promise<void> {
+        try {
+            const message = isLate
+                ? `${studentName} arrived at school (late) at ${arrivalTime}.`
+                : `${studentName} arrived at school at ${arrivalTime}.`;
+            for (const parentId of parentIds) {
+                await notificationService.sendNotification({
+                    schoolId,
+                    recipientId: parentId,
+                    recipientRole: 'parent' as UserRole,
+                    notificationType: 'arrival_alert',
+                    title: isLate ? '⏰ Late Arrival' : '🏫 Arrived at School',
+                    message,
+                    priority: isLate ? 'high' : 'low',
+                    relatedStudentId: studentId,
+                    actionUrl: `/parent/attendance`,
+                    deliveryChannels: ['in_app', 'email'],
+                });
+            }
+        } catch (error) {
+            console.error('[NOTIFICATION_TRIGGER] Error on student arrival:', error);
+        }
+    },
+
+    /**
+     * Trigger student departure notification (Teacher-on-duty attendance).
+     * Recipients: Parents
+     */
+    async onStudentDeparture(
+        schoolId: string,
+        studentId: string,
+        studentName: string,
+        parentIds: string[],
+        departureTime: string,
+        pickupPerson?: string
+    ): Promise<void> {
+        try {
+            const message = pickupPerson
+                ? `${studentName} departed school at ${departureTime} with ${pickupPerson}.`
+                : `${studentName} departed school at ${departureTime}.`;
+            for (const parentId of parentIds) {
+                await notificationService.sendNotification({
+                    schoolId,
+                    recipientId: parentId,
+                    recipientRole: 'parent' as UserRole,
+                    notificationType: 'departure_alert',
+                    title: '🏠 Departed School',
+                    message,
+                    priority: 'low',
+                    relatedStudentId: studentId,
+                    actionUrl: `/parent/attendance`,
+                    deliveryChannels: ['in_app', 'email'],
+                });
+            }
+        } catch (error) {
+            console.error('[NOTIFICATION_TRIGGER] Error on student departure:', error);
+        }
+    },
+
+    /**
+     * Trigger payment confirmation notification (manual or virtual account).
+     * Recipients: Parents + Finance officers
+     */
+    async onPaymentConfirmation(
+        schoolId: string,
+        studentId: string,
+        studentName: string,
+        parentIds: string[],
+        financeIds: string[],
+        amount: number,
+        newBalance: number,
+        receiptNumber: string
+    ): Promise<void> {
+        try {
+            const amountText = `₦${amount.toLocaleString()}`;
+            const balanceText = `₦${newBalance.toLocaleString()}`;
+
+            for (const parentId of parentIds) {
+                await notificationService.sendNotification({
+                    schoolId,
+                    recipientId: parentId,
+                    recipientRole: 'parent' as UserRole,
+                    notificationType: 'payment_confirmation',
+                    title: '✅ Payment Received',
+                    message: `Payment of ${amountText} received for ${studentName}. Outstanding balance: ${balanceText}. Receipt: ${receiptNumber}`,
+                    priority: 'medium',
+                    relatedStudentId: studentId,
+                    actionUrl: `/parent/fees`,
+                    deliveryChannels: ['in_app', 'email'],
+                });
+            }
+
+            for (const financeId of financeIds) {
+                await notificationService.sendNotification({
+                    schoolId,
+                    recipientId: financeId,
+                    recipientRole: 'finance' as UserRole,
+                    notificationType: 'payment_confirmation',
+                    title: '💰 Payment Received',
+                    message: `${amountText} received for ${studentName} (${receiptNumber}). Balance: ${balanceText}`,
+                    priority: 'low',
+                    relatedStudentId: studentId,
+                    actionUrl: `/fees`,
+                    deliveryChannels: ['in_app'],
+                });
+            }
+        } catch (error) {
+            console.error('[NOTIFICATION_TRIGGER] Error on payment confirmation:', error);
+        }
+    },
+
+    /**
+     * Trigger reconciliation anomaly notification.
+     * Recipients: Finance officers + Admins
+     */
+    async onReconciliationAnomaly(
+        schoolId: string,
+        financeIds: string[],
+        adminIds: string[],
+        summary: string,
+        priority: NotificationPriority = 'high'
+    ): Promise<void> {
+        try {
+            const recipients: Array<{ id: string; role: UserRole }> = [
+                ...financeIds.map((id) => ({ id, role: 'finance' as UserRole })),
+                ...adminIds.map((id) => ({ id, role: 'admin' as UserRole })),
+            ];
+            for (const r of recipients) {
+                await notificationService.sendNotification({
+                    schoolId,
+                    recipientId: r.id,
+                    recipientRole: r.role,
+                    notificationType: 'reconciliation_alert',
+                    title: '🧾 Reconciliation Alert',
+                    message: summary,
+                    priority,
+                    actionUrl: `/finance/reconciliation`,
+                    deliveryChannels: ['in_app'],
+                });
+            }
+        } catch (error) {
+            console.error('[NOTIFICATION_TRIGGER] Error on reconciliation anomaly:', error);
         }
     }
 };

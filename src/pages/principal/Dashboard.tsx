@@ -31,6 +31,7 @@ import {
   type PrincipalDashboardData,
   type PrincipalAlert,
 } from '@/services/principalDashboardService';
+import OnDutyWidget from '@/components/dashboard/OnDutyWidget';
 
 export default function PrincipalDashboard() {
   const navigate = useNavigate();
@@ -126,7 +127,7 @@ export default function PrincipalDashboard() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold mb-1">
-              Welcome{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
+              Welcome{(user?.fullName || user?.name) ? `, ${(user.fullName || user.name || '').split(' ')[0]}` : ''}
             </h1>
             <p className="text-gray-300 dark:text-gray-600 text-sm">{sessionLabel}</p>
             <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">Principal overview — read-only insights</p>
@@ -190,6 +191,8 @@ export default function PrincipalDashboard() {
           );
         })}
       </div>
+
+      {user?.schoolId && <OnDutyWidget schoolId={user.schoolId} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="card">

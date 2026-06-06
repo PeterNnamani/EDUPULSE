@@ -17,7 +17,11 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store';
 import { useAcademicCalendar } from '@/hooks';
+import BirthdayWidget from '@/components/dashboard/BirthdayWidget';
+import StudentUsageWidget from '@/components/dashboard/StudentUsageWidget';
+import OnDutyWidget from '@/components/dashboard/OnDutyWidget';
 import { getAcademicWeek, AcademicWeekInfo } from '@/utils/academicWeekUtils';
+import { formatTime } from '@/utils/displayUtils';
 import {
   countHighRiskStudents,
   fetchClassPerformanceChart,
@@ -246,19 +250,19 @@ export default function AdminDashboard() {
 
       const pendingFeesCount = await getPendingFeesStudentCount(schoolId);
 
-      // Get interventions
+      // Get interventions (open + in_progress cases from the live intervention engine)
       const interventionsRes = await supabase
-        .from('interventions')
-        .select('id, status, urgency', { count: 'exact' })
+        .from('intervention_cases')
+        .select('id, status, priority', { count: 'exact' })
         .eq('school_id', schoolId)
-        .eq('status', 'open');
+        .in('status', ['open', 'in_progress', 'escalated']);
 
       const openInterventions = interventionsRes.count || 0;
 
       // Count urgent interventions
       let urgentInterventions = 0;
       if (interventionsRes.data) {
-        urgentInterventions = interventionsRes.data.filter((i: any) => i.urgency === 'urgent' || i.urgency === 'critical').length;
+        urgentInterventions = interventionsRes.data.filter((i: any) => i.priority === 'high' || i.priority === 'critical').length;
       }
 
       // VALIDATE DATA INTEGRITY - Ensure no wrong data is displayed
@@ -562,7 +566,7 @@ export default function AdminDashboard() {
       // 9. Risk Assessments
       try {
         const { data: risks, error: risksError } = await supabase
-          .from('risk_assessments')
+          .from('risk_scores')
           .select('id, created_at, risk_level')
           .eq('school_id', schoolId)
           .order('created_at', { ascending: false })
@@ -586,8 +590,8 @@ export default function AdminDashboard() {
       // 10. Interventions
       try {
         const { data: interventions, error: interventionsError } = await supabase
-          .from('interventions')
-          .select('id, created_at, title, status, priority')
+          .from('intervention_cases')
+          .select('id, created_at, case_title, status, priority')
           .eq('school_id', schoolId)
           .order('created_at', { ascending: false })
           .limit(10);
@@ -597,7 +601,7 @@ export default function AdminDashboard() {
           interventions.forEach((i: any) => {
             allActivities.push({
               id: `intervention-${i.id}`,
-              action: `Intervention: ${i.title}`,
+              action: `Intervention: ${i.case_title}`,
               timestamp: i.created_at,
               type: 'risk' as const,
             });
@@ -746,7 +750,7 @@ export default function AdminDashboard() {
           <h3 className="font-semibold mb-4">Weekly Attendance</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={[{ day: 'Mon', present: 0, absent: 0 }]}>
+              <BarChart data={attendanceData.length > 0 ? attendanceData : [{ day: 'Mon', present: 0, absent: 0 }]}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="day" />
                 <YAxis />
@@ -775,7 +779,14 @@ export default function AdminDashboard() {
         </motion.div>
       </div>
 
+      <div className="mb-6">
+        <StudentUsageWidget />
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {schoolId && <OnDutyWidget schoolId={schoolId} />}
+        <BirthdayWidget />
+
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="card">
           <h3 className="font-semibold mb-4">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-3">
@@ -807,7 +818,7 @@ export default function AdminDashboard() {
                   <div className="w-2 h-2 rounded-full bg-blue-500" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{activity.action}</p>
-                    <p className="text-xs text-secondary-text">{new Date(activity.timestamp).toLocaleTimeString()}</p>
+                    <p className="text-xs text-secondary-text">{formatTime(activity.timestamp)}</p>
                   </div>
                 </div>
               ))

@@ -1,7 +1,7 @@
-import { Building2, Bell, Moon, Shield, User, Wallet, type LucideIcon } from 'lucide-react';
+import { Building2, Bell, Moon, Shield, User, Wallet, CreditCard, type LucideIcon } from 'lucide-react';
 import type { UserRole } from '@/types';
 
-export type SettingsTabId = 'profile' | 'school' | 'notifications' | 'security' | 'appearance' | 'billing';
+export type SettingsTabId = 'profile' | 'school' | 'notifications' | 'security' | 'appearance' | 'billing' | 'payments';
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -26,6 +26,7 @@ export function getRoleSettingsConfig(role: UserRole): RoleSettingsConfig {
         subtitle: 'Manage your school profile, policies, and account',
         tabs: [
           { id: 'school', label: 'School', icon: Building2 },
+          { id: 'payments', label: 'Payments', icon: CreditCard },
           { id: 'notifications', label: 'Notifications', icon: Bell },
           { id: 'security', label: 'Security', icon: Shield },
           { id: 'appearance', label: 'Appearance', icon: Moon },

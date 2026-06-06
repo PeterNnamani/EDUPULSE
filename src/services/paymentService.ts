@@ -120,5 +120,55 @@ export async function recordPayment(
   const { scheduleRiskRecalculation } = await import('@/services/riskRecalculate');
   scheduleRiskRecalculation(request.schoolId, request.studentId);
 
+  const { auditService } = await import('@/services/auditService');
+  void auditService.logAudit({
+    schoolId: request.schoolId,
+    userId: request.recordedByStaffId ?? null,
+    userType: 'staff',
+    action: 'payment_recorded',
+    entityType: 'payment',
+    entityId: data.id,
+    newValues: {
+      studentId: request.studentId,
+      amount: request.amount,
+      paymentMethod: request.paymentMethod,
+      receiptNumber,
+    },
+  });
+
+  // Apply against fee obligations and notify parents + finance with the new balance.
+  void (async () => {
+    try {
+      const { feeAssignmentService } = await import('@/services/feeAssignmentService');
+      const { newBalance } = await feeAssignmentService.applyPaymentToObligations(
+        request.schoolId,
+        request.studentId,
+        request.amount
+      );
+
+      const { notificationTriggerService } = await import('@/services/notificationTriggerService');
+      const { getParentIdsForStudent, getStaffIdsByRole, getStudentDisplayName } = await import(
+        '@/services/notificationDispatchService'
+      );
+      const [studentName, parentIds, financeIds] = await Promise.all([
+        getStudentDisplayName(request.studentId),
+        getParentIdsForStudent(request.studentId),
+        getStaffIdsByRole(request.schoolId, 'finance'),
+      ]);
+      void notificationTriggerService.onPaymentConfirmation(
+        request.schoolId,
+        request.studentId,
+        studentName,
+        parentIds,
+        financeIds,
+        request.amount,
+        newBalance,
+        receiptNumber
+      );
+    } catch (e) {
+      console.warn('[PAYMENT] post-payment automation failed:', e);
+    }
+  })();
+
   return { success: true, paymentId: data.id, receiptNumber };
 }

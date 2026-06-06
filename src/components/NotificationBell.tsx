@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
-import { Bell, Check, Archive, X, Clock, AlertTriangle } from 'lucide-react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { Bell, Check, Archive, X, Clock, AlertTriangle, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useInAppNotifications } from '@/contexts/InAppNotificationContext';
 import type { Notification } from '@/services/notificationService';
+import NotificationPreviewModal, { hasNotificationPreview } from '@/components/NotificationPreviewModal';
 
 interface NotificationBellProps {
   className?: string;
@@ -11,6 +12,10 @@ interface NotificationBellProps {
 
 export default function NotificationBell({ className = '' }: NotificationBellProps) {
   const [showPanel, setShowPanel] = useState(false);
+  const [previewNotification, setPreviewNotification] = useState<Notification | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const bellButtonRef = useRef<HTMLButtonElement>(null);
   const {
     notifications,
     unreadCount,
@@ -38,22 +43,80 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
     [archive, refetch]
   );
 
+  const closePanel = useCallback(() => setShowPanel(false), []);
+
+  // Close panel when clicking outside or when focus leaves the notification area
+  useEffect(() => {
+    if (!showPanel) return;
+
+    const isInside = (target: EventTarget | null) => {
+      const node = target as Node | null;
+      if (!node) return false;
+      return (
+        panelRef.current?.contains(node) ||
+        bellButtonRef.current?.contains(node) ||
+        containerRef.current?.contains(node)
+      );
+    };
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!isInside(e.target)) closePanel();
+    };
+
+    const handleFocusIn = (e: FocusEvent) => {
+      if (!isInside(e.target)) closePanel();
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closePanel();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('focusin', handleFocusIn);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('focusin', handleFocusIn);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showPanel, closePanel]);
+
   return (
-    <div className={`relative ${className}`}>
-      {/* Login / live toast bubbles */}
+    <div ref={containerRef} className={`relative ${className}`}>
+      {/* Animated toast bubbles — auto-dismiss after 5s via context */}
       <AnimatePresence>
         {loginToasts.map((notification, index) => (
           <motion.div
             key={`toast-${notification.id}`}
-            initial={{ opacity: 0, y: -20, x: 20 }}
-            animate={{ opacity: 1, y: 0, x: 0 }}
-            exit={{ opacity: 0, y: -20, x: 40 }}
-            transition={{ delay: index * 0.08 }}
-            className={`absolute right-0 z-[60] w-80 p-4 rounded-lg shadow-lg border pointer-events-auto ${getPriorityBubbleColor(notification.priority)}`}
-            style={{ top: `${3.5 + index * 5.5}rem` }}
+            initial={{ opacity: 0, y: -24, x: 40, scale: 0.9 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              x: 0,
+              scale: 1,
+            }}
+            exit={{ opacity: 0, y: -16, x: 48, scale: 0.92 }}
+            transition={{
+              type: 'spring',
+              stiffness: 380,
+              damping: 26,
+              delay: index * 0.06,
+            }}
+            className={`absolute right-0 z-[60] w-80 p-4 rounded-xl shadow-xl border pointer-events-auto ${getPriorityBubbleColor(notification.priority)}`}
+            style={{ top: `${3.5 + index * 5.75}rem` }}
           >
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <motion.div
+              animate={{ boxShadow: ['0 0 0 0 rgba(59,130,246,0)', '0 0 0 6px rgba(59,130,246,0.15)', '0 0 0 0 rgba(59,130,246,0)'] }}
+              transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+              className="absolute inset-0 rounded-xl pointer-events-none"
+            />
+            <div className="flex items-start gap-3 relative">
+              <motion.div
+                animate={{ rotate: [0, -8, 8, 0] }}
+                transition={{ duration: 0.5, repeat: 2, repeatDelay: 1 }}
+              >
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              </motion.div>
               <div className="flex-1 min-w-0">
                 <h4 className="font-semibold text-sm text-gray-900 dark:text-gray-100">
                   {notification.title}
@@ -61,7 +124,24 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
                 <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
                   {notification.message}
                 </p>
-                <div className="flex items-center gap-2 mt-2">
+                {hasNotificationPreview(notification) && (
+                  <p className="text-[11px] text-green-700 dark:text-green-400 mt-1.5">
+                    Tap View details to see attendance, grades, or duty records.
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  {hasNotificationPreview(notification) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewNotification(notification);
+                        dismissLoginToast(notification.id);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-green-600 text-white rounded-md hover:bg-green-700"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> View details
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -94,17 +174,25 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
       </AnimatePresence>
 
       <button
+        ref={bellButtonRef}
         type="button"
-        onClick={() => setShowPanel(!showPanel)}
+        onClick={() => setShowPanel((open) => !open)}
         className="relative p-2 text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
         title="Notifications"
         aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}
+        aria-expanded={showPanel}
       >
-        <Bell size={24} />
+        <motion.div
+          animate={unreadCount > 0 ? { rotate: [0, -12, 12, -8, 0] } : {}}
+          transition={{ duration: 0.6, repeat: unreadCount > 0 ? Infinity : 0, repeatDelay: 3 }}
+        >
+          <Bell size={24} />
+        </motion.div>
         {unreadCount > 0 && (
           <motion.span
             initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
+            animate={{ scale: [1, 1.15, 1] }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
             className="absolute top-1 right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full"
           >
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -112,57 +200,72 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
         )}
       </button>
 
-      {showPanel && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="absolute right-0 mt-2 w-96 max-h-[600px] bg-white dark:bg-dark-card rounded-lg shadow-xl z-50 flex flex-col border border-border dark:border-gray-800"
-        >
-          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
-            <button
-              type="button"
-              onClick={() => setShowPanel(false)}
-              className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-            >
-              <X size={20} />
-            </button>
-          </div>
+      <AnimatePresence>
+        {showPanel && (
+          <motion.div
+            ref={panelRef}
+            initial={{ opacity: 0, scale: 0.95, y: -8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -8 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+            className="absolute right-0 mt-2 w-96 max-h-[600px] bg-white dark:bg-dark-card rounded-lg shadow-xl z-50 flex flex-col border border-border dark:border-gray-800"
+          >
+            <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 dark:text-white">Notifications</h3>
+              <button
+                type="button"
+                onClick={closePanel}
+                className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {isLoading ? (
-              <div className="p-4 text-center text-gray-500">Loading…</div>
-            ) : notifications.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                <Bell size={32} className="mx-auto mb-2 opacity-50" />
-                <p>No new notifications</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-200 dark:divide-gray-700">
-                {notifications.map((notification, index) => (
-                  <NotificationRow
-                    key={notification.id}
-                    notification={notification}
-                    index={index}
-                    onRead={handleMarkAsRead}
+            <div className="flex-1 overflow-y-auto">
+              {isLoading ? (
+                <div className="p-4 text-center text-gray-500">Loading…</div>
+              ) : notifications.length === 0 ? (
+                <div className="p-8 text-center text-gray-500">
+                  <Bell size={32} className="mx-auto mb-2 opacity-50" />
+                  <p>No new notifications</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {notifications.map((notification, index) => (
+                    <NotificationRow
+                      key={notification.id}
+                      notification={notification}
+                      index={index}
+                      onRead={handleMarkAsRead}
                     onArchive={handleArchive}
+                    onNavigate={closePanel}
+                    onPreview={(n) => {
+                      setPreviewNotification(n);
+                      closePanel();
+                    }}
                   />
-                ))}
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-          <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-            <Link
-              to="/notifications"
-              onClick={() => setShowPanel(false)}
-              className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-semibold"
-            >
-              View all notifications →
-            </Link>
-          </div>
-        </motion.div>
-      )}
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+              <Link
+                to="/notifications"
+                onClick={closePanel}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+              >
+                View all notifications →
+              </Link>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <NotificationPreviewModal
+        notification={previewNotification}
+        onClose={() => setPreviewNotification(null)}
+      />
     </div>
   );
 }
@@ -172,11 +275,15 @@ function NotificationRow({
   index,
   onRead,
   onArchive,
+  onNavigate,
+  onPreview,
 }: {
   notification: Notification;
   index: number;
   onRead: (id: string) => void;
   onArchive: (id: string) => void;
+  onNavigate: () => void;
+  onPreview: (n: Notification) => void;
 }) {
   return (
     <motion.div
@@ -211,9 +318,20 @@ function NotificationRow({
               <Archive size={14} />
               Archive
             </button>
-            {notification.actionUrl && (
+            {hasNotificationPreview(notification) && (
+              <button
+                type="button"
+                onClick={() => onPreview(notification)}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                <Eye size={14} />
+                View details
+              </button>
+            )}
+            {notification.actionUrl && !hasNotificationPreview(notification) && (
               <Link
                 to={notification.actionUrl}
+                onClick={onNavigate}
                 className="text-xs text-green-700 dark:text-green-400 hover:underline"
               >
                 View

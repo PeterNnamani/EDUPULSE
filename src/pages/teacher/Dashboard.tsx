@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { CalendarDays, ClipboardList, Users, AlertTriangle, BookOpen, TrendingUp, Plus, Loader } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -30,6 +31,7 @@ interface Student {
 
 export default function TeacherDashboard() {
   const { user } = useAppStore();
+  const navigate = useNavigate();
   const [classes, setClasses] = useState<TeacherClass[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [riskStudents, setRiskStudents] = useState<any[]>([]);
@@ -46,7 +48,6 @@ export default function TeacherDashboard() {
       }
 
       try {
-        // Get teacher's classes
         const teacherClasses = await getTeacherClasses(user.schoolId, user.id);
         setClasses(teacherClasses);
         setTotalStudents(teacherClasses.reduce((sum, cls) => sum + cls.students, 0));
@@ -195,13 +196,17 @@ export default function TeacherDashboard() {
                 <Loader className="w-5 h-5 animate-spin" />
               </div>
             ) : classes.length > 0 ? (
-              classes.map((cls, index) => (
+              classes.map((cls) => (
                 <div key={cls.id} className="flex items-center gap-4 p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
                   <div className="flex-1">
                     <p className="font-medium">{cls.name}</p>
                     <p className="text-sm text-secondary-text">{cls.students} students</p>
                   </div>
-                  <button className="p-2 rounded-lg bg-black dark:bg-white text-white dark:text-black text-sm font-medium hover:opacity-80 transition">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/attendance')}
+                    className="p-2 rounded-lg bg-black dark:bg-white text-white dark:text-black text-sm font-medium hover:opacity-80 transition"
+                  >
                     View Class
                   </button>
                 </div>
@@ -262,7 +267,10 @@ export default function TeacherDashboard() {
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Recent Assignments</h3>
-            <button className="btn-secondary text-sm py-2 flex items-center gap-2">
+            <button
+              onClick={() => navigate('/assignments')}
+              className="btn-secondary text-sm py-2 flex items-center gap-2"
+            >
               <Plus className="w-4 h-4" />
               Create New
             </button>
@@ -318,7 +326,7 @@ export default function TeacherDashboard() {
               <AlertTriangle className="w-5 h-5 text-red-500" />
               Students at Risk
             </h3>
-            <button className="text-sm text-red-600 hover:underline">View All</button>
+            <button onClick={() => navigate('/risk')} className="text-sm text-red-600 hover:underline">View All</button>
           </div>
           <div className="space-y-3">
             {loading ? (
@@ -358,19 +366,19 @@ export default function TeacherDashboard() {
       >
         <h3 className="font-semibold mb-4">Quick Actions</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <button className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
+          <button onClick={() => navigate('/attendance')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
             <CalendarDays className="w-6 h-6" />
             <span className="text-sm font-medium">Take Attendance</span>
           </button>
-          <button className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
+          <button onClick={() => navigate('/grades')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
             <ClipboardList className="w-6 h-6" />
             <span className="text-sm font-medium">Enter Grades</span>
           </button>
-          <button className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
+          <button onClick={() => navigate('/assignments')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
             <BookOpen className="w-6 h-6" />
             <span className="text-sm font-medium">Create Assignment</span>
           </button>
-          <button className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
+          <button onClick={() => navigate('/reports')} className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors flex flex-col items-center gap-2">
             <TrendingUp className="w-6 h-6" />
             <span className="text-sm font-medium">View Reports</span>
           </button>

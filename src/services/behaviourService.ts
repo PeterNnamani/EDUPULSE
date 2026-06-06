@@ -97,6 +97,17 @@ export async function recordBehaviour(
         const { scheduleRiskRecalculation } = await import('@/services/riskRecalculate');
         scheduleRiskRecalculation(schoolId, studentId);
 
+        const { teacherActivityService } = await import('@/services/teacherActivityService');
+        void teacherActivityService.logActivity({
+            schoolId,
+            staffId: staffId ?? null,
+            action: 'behaviour_recorded',
+            entityType: 'behaviour_record',
+            relatedStudentId: studentId,
+            relatedClassId: classId,
+            details: { behaviourType, points: calculatedPoints },
+        });
+
         return { success: true };
     } catch (error) {
         console.error('Record behaviour error:', error);

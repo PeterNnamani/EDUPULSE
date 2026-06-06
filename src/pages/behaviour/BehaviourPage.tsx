@@ -4,6 +4,7 @@ import { Plus, TrendingUp, TrendingDown, AlertTriangle, Award, Search, Filter, L
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store';
 import { recordBehaviour } from '@/services/behaviourService';
+import { getInitials } from '@/utils/displayUtils';
 
 interface BehaviourRecord {
   id: string;
@@ -569,7 +570,7 @@ export default function BehaviourPage() {
                     <div className="flex items-center gap-3 flex-1 text-left">
                       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                         <span className="text-xs font-bold text-blue-600">
-                          {selectedStudent.first_name[0]}{selectedStudent.last_name[0]}
+                          {getInitials(selectedStudent.first_name, selectedStudent.last_name)}
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
@@ -635,7 +636,7 @@ export default function BehaviourPage() {
                           >
                             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
                               <span className="text-xs font-bold text-blue-600">
-                                {student.first_name[0]}{student.last_name[0]}
+                                {getInitials(student.first_name, student.last_name)}
                               </span>
                             </div>
                             <div className="flex-1 min-w-0">
