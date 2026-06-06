@@ -50,7 +50,9 @@ export async function sendChatMessage(
         userRole: context.userRole,
         userName: context.userName,
         schoolId: context.schoolId,
-        accountData: accountContext,
+        userId: context.userId,
+        staffId: context.staffId,
+        children: context.children,
         conversationHistory: context.conversationHistory?.slice(-8) ?? [],
       },
     });

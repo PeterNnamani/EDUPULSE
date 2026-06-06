@@ -35,6 +35,7 @@ import { type FeatureKey } from '@/config/planFeatures';
 
 const adminNavItems = [
   { label: 'Dashboard', path: '/admin', icon: LayoutDashboard },
+  { label: 'Messages', path: '/messages', icon: MessageSquare },
   { label: 'Students', path: '/admin/students', icon: Users },
   { label: 'Staff', path: '/admin/staff', icon: GraduationCap },
   { label: 'Classes', path: '/admin/classes', icon: Building },
@@ -46,18 +47,17 @@ const adminNavItems = [
   { label: 'Duty Attendance', path: '/duty-attendance', icon: UserCheck },
   { label: 'Teacher Activity', path: '/admin/teacher-activity', icon: Activity },
   { label: 'Audit Logs', path: '/admin/audit-logs', icon: ShieldCheck },
-  { label: 'Messages', path: '/messages', icon: MessageSquare },
 ];
 
 const teacherNavItems = [
   { label: 'Dashboard', path: '/teacher', icon: LayoutDashboard },
+  { label: 'Messages', path: '/messages', icon: MessageSquare },
   { label: 'Attendance', path: '/attendance', icon: CalendarDays },
   { label: 'Duty Attendance', path: '/duty-attendance', icon: UserCheck },
   { label: 'Grades', path: '/grades', icon: ClipboardList },
   { label: 'Assignments', path: '/assignments', icon: BookOpen },
   { label: 'Behaviour', path: '/behaviour', icon: AlertTriangle },
   { label: 'Reports', path: '/reports', icon: FileText },
-  { label: 'Messages', path: '/messages', icon: MessageSquare },
 ];
 
 const principalNavItems = [
@@ -69,6 +69,7 @@ const principalNavItems = [
   { label: 'Risk Analysis', path: '/risk', icon: AlertTriangle },
   { label: 'Teacher Activity', path: '/admin/teacher-activity', icon: Activity },
   { label: 'Reports', path: '/reports', icon: FileText },
+  { label: 'Messages', path: '/messages', icon: MessageSquare },
   { label: 'Settings', path: '/settings', icon: Settings },
 ];
 
@@ -88,11 +89,18 @@ const financeNavItems = [
 
 const parentNavItems = [
   { label: 'Dashboard', path: '/parent', icon: LayoutDashboard },
+  { label: 'Messages', path: '/messages', icon: MessageSquare },
   { label: 'Attendance', path: '/parent/attendance', icon: CalendarDays },
   { label: 'Grades', path: '/parent/grades', icon: ClipboardList },
   { label: 'Assignments', path: '/parent/assignments', icon: BookOpen },
-  { label: 'Messages', path: '/messages', icon: MessageSquare },
 ];
+
+const MESSAGING_ROLES = new Set(['admin', 'teacher', 'parent', 'principal']);
+
+function isNavItemActive(path: string, pathname: string) {
+  if (path === '/messages') return pathname.startsWith('/messages');
+  return pathname === path;
+}
 
 const roleNavMap = {
   admin: adminNavItems,
@@ -132,6 +140,40 @@ export default function Layout() {
     // While plan is loading, keep items visible to avoid flicker/hiding.
     return featuresLoading || hasFeature(feature);
   });
+  const showMessagesNav =
+    !!user &&
+    MESSAGING_ROLES.has(user.role) &&
+    (featuresLoading || hasFeature('school_messaging'));
+  const messagingEnabled = !featuresLoading && hasFeature('school_messaging');
+  const [messageUnreadCount, setMessageUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!messagingEnabled || !user?.schoolId || !user?.id || !user?.role) {
+      setMessageUnreadCount(0);
+      return;
+    }
+
+    let active = true;
+    const refreshUnread = () => {
+      import('@/services/messageService')
+        .then(({ messageService }) =>
+          messageService.getUnreadCount(user.schoolId!, user.id!, user.role!)
+        )
+        .then((count) => {
+          if (active) setMessageUnreadCount(count);
+        })
+        .catch(() => {
+          if (active) setMessageUnreadCount(0);
+        });
+    };
+
+    refreshUnread();
+    const interval = window.setInterval(refreshUnread, 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [messagingEnabled, user?.schoolId, user?.id, user?.role, location.pathname]);
 
   useEffect(() => {
     if (isAuthenticated && user?.role === 'admin' && user.schoolId) {
@@ -170,6 +212,42 @@ export default function Layout() {
     navigate('/');
   };
 
+  const messagesNavClass = (compact = false) => {
+    const active = isNavItemActive('/messages', location.pathname);
+    return [
+      'relative flex items-center gap-2 rounded-lg font-medium transition-colors',
+      compact ? 'p-2' : 'px-3 py-2 text-sm',
+      active
+        ? 'bg-secondary-bg dark:bg-dark-elevated text-primary-text dark:text-dark-text'
+        : 'text-secondary-text dark:text-dark-icon hover:bg-secondary-bg dark:hover:bg-dark-elevated hover:text-primary-text dark:hover:text-dark-text',
+    ].join(' ');
+  };
+
+  const MessagesNavLink = ({ compact = false }: { compact?: boolean }) => {
+    if (!showMessagesNav) return null;
+
+    return (
+      <Link
+        to="/messages"
+        onClick={() => window.innerWidth < 1024 && toggleSidebar()}
+        className={messagesNavClass(compact)}
+        title="Messages"
+      >
+        <MessageSquare className={compact ? 'w-5 h-5' : 'w-5 h-5'} />
+        {!compact && <span>Messages</span>}
+        {messageUnreadCount > 0 && (
+          <span
+            className={`absolute flex items-center justify-center min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold ${
+              compact ? 'top-0 right-0 translate-x-1/3 -translate-y-1/3' : 'static ml-0.5'
+            }`}
+          >
+            {messageUnreadCount > 9 ? '9+' : messageUnreadCount}
+          </span>
+        )}
+      </Link>
+    );
+  };
+
   return (
     <InAppNotificationProvider>
     <div className={`h-screen flex flex-col bg-white dark:bg-dark-bg ${darkMode ? 'dark' : ''}`}>
@@ -181,6 +259,7 @@ export default function Layout() {
           </button>
           <h1 className="font-semibold text-lg dark:text-dark-text">EduPulse</h1>
           <div className="flex items-center gap-2">
+            <MessagesNavLink compact />
             <NotificationBell />
             <button onClick={toggleDarkMode} className="p-2 rounded-lg text-secondary-text dark:text-dark-icon hover:bg-secondary-bg dark:hover:bg-dark-elevated">
               {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -234,7 +313,7 @@ export default function Layout() {
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path;
+                const isActive = isNavItemActive(item.path, location.pathname);
                 return (
                   <Link
                     key={item.path}
@@ -244,6 +323,11 @@ export default function Layout() {
                   >
                     <Icon className="w-5 h-5" />
                     <span>{item.label}</span>
+                    {item.path === '/messages' && messageUnreadCount > 0 && (
+                      <span className="ml-auto min-w-[1.25rem] h-5 px-1.5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                        {messageUnreadCount > 9 ? '9+' : messageUnreadCount}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
@@ -269,12 +353,12 @@ export default function Layout() {
           <header className="hidden lg:flex h-16 items-center justify-between px-6 border-b border-border dark:border-dark-border bg-white dark:bg-dark-bg flex-shrink-0">
             <div className="flex items-center gap-4">
               <h2 className="text-lg font-medium dark:text-dark-text">
-                {navItems.find((item) => item.path === location.pathname)?.label || 'Dashboard'}
+                {navItems.find((item) => isNavItemActive(item.path, location.pathname))?.label || 'Dashboard'}
               </h2>
             </div>
 
-            <div className="flex items-center gap-4">
-              {/* Notifications Bell Component */}
+            <div className="flex items-center gap-3">
+              <MessagesNavLink />
               <NotificationBell />
 
               {/* Profile */}

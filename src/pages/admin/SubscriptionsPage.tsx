@@ -70,7 +70,7 @@ function buildPlanPayload(plan: PlanDefinition, cycle: BillingChoice): Subscript
 }
 
 export default function SubscriptionsPage() {
-  const { user, setActivePlanTier } = useAppStore();
+  const { user } = useAppStore();
   const [processing, setProcessing] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -138,7 +138,6 @@ export default function SubscriptionsPage() {
       throw new Error(verification.error || 'Payment verification failed');
     }
 
-    setActivePlanTier(plan.id);
     refreshFeatureAccess(user.schoolId);
 
     await notifySubscriptionActivated(user.schoolId, plan.name, priceFor(plan, billingChoice));

@@ -155,6 +155,98 @@ function isMissingMessagingTableError(message: string): boolean {
   );
 }
 
+/** Compact label for admin: "Parent Name · Child (Class), Child2 (Class2)" */
+export function formatParentSenderLabel(
+  parentName: string,
+  children: Array<{ firstName: string; className?: string | null }>
+): string {
+  const name = parentName.trim() || 'Parent';
+  if (!children.length) return name;
+
+  const kids = children
+    .map((c) => {
+      const first = c.firstName.trim();
+      const cls = c.className?.trim();
+      return cls ? `${first} (${cls})` : first;
+    })
+    .filter(Boolean);
+
+  if (!kids.length) return name;
+  return `${name} · ${kids.join(', ')}`;
+}
+
+async function resolveParentSenderLabel(
+  schoolId: string,
+  parentId: string,
+  studentId?: string | null
+): Promise<string> {
+  const { data: parent } = await supabase
+    .from('parents')
+    .select('father_name, mother_name, guardian_name')
+    .eq('id', parentId)
+    .eq('school_id', schoolId)
+    .maybeSingle();
+
+  const parentName =
+    parent?.father_name || parent?.mother_name || parent?.guardian_name || 'Parent';
+
+  const { data: links } = await supabase
+    .from('student_parents')
+    .select('student_id')
+    .eq('parent_id', parentId);
+
+  let studentIds = (links ?? []).map((l) => l.student_id).filter(Boolean) as string[];
+  if (studentId) {
+    studentIds = [studentId];
+  }
+  if (!studentIds.length) return parentName.trim() || 'Parent';
+
+  const { data: students } = await supabase
+    .from('students')
+    .select('id, first_name, classes(name)')
+    .eq('school_id', schoolId)
+    .eq('status', 'active')
+    .in('id', studentIds);
+
+  const children = (students ?? [])
+    .filter((s) => !studentId || s.id === studentId)
+    .map((s) => ({
+      firstName: s.first_name as string,
+      className: (s.classes as { name?: string } | null)?.name ?? null,
+    }));
+
+  return formatParentSenderLabel(parentName, children);
+}
+
+async function enrichParentThreadLabels(
+  schoolId: string,
+  threads: MessageThread[]
+): Promise<MessageThread[]> {
+  return Promise.all(
+    threads.map(async (t) => {
+      if (t.createdByRole !== 'parent') return t;
+      if (t.createdByName.includes('·')) return t;
+      const label = await resolveParentSenderLabel(schoolId, t.createdBy, t.studentId);
+      return { ...t, createdByName: label };
+    })
+  );
+}
+
+async function enrichParentMessageLabels(
+  schoolId: string,
+  messages: ThreadMessage[],
+  threadStudentId?: string | null
+): Promise<ThreadMessage[]> {
+  return Promise.all(
+    messages.map(async (m) => {
+      if (m.senderRole !== 'parent') return m;
+      if (m.senderName.includes('·')) return m;
+      const label = await resolveParentSenderLabel(schoolId, m.senderId, threadStudentId);
+      return { ...m, senderName: label };
+    })
+  );
+}
+
 export const messageService = {
   async listInbox(
     schoolId: string,
@@ -201,7 +293,13 @@ export const messageService = {
         t.lastMessagePreview.length > 0;
       return { ...t, unread };
     });
-    return { threads };
+
+    const enriched =
+      role === 'admin' || role === 'principal'
+        ? await enrichParentThreadLabels(schoolId, threads)
+        : threads;
+
+    return { threads: enriched };
   },
 
   async getUnreadCount(schoolId: string, userId: string, role: UserRole): Promise<number> {
@@ -209,7 +307,12 @@ export const messageService = {
     return threads.filter((t) => t.unread).length;
   },
 
-  async getMessages(threadId: string, limit = MAX_MESSAGES): Promise<ThreadMessage[]> {
+  async getMessages(
+    schoolId: string,
+    threadId: string,
+    options?: { studentId?: string | null; limit?: number }
+  ): Promise<ThreadMessage[]> {
+    const limit = options?.limit ?? MAX_MESSAGES;
     const { data, error } = await supabase
       .from('thread_messages')
       .select('*')
@@ -221,7 +324,8 @@ export const messageService = {
       console.error('[MESSAGES] fetch error:', error.message);
       return [];
     }
-    return (data ?? []).map(mapMessage);
+    const rows = (data ?? []).map(mapMessage);
+    return enrichParentMessageLabels(schoolId, rows, options?.studentId);
   },
 
   async markRead(schoolId: string, threadId: string, userId: string): Promise<void> {
@@ -241,6 +345,15 @@ export const messageService = {
     const preview = input.body.trim().slice(0, 120);
     const now = new Date().toISOString();
 
+    let displaySenderName = input.senderName;
+    if (input.senderRole === 'parent') {
+      displaySenderName = await resolveParentSenderLabel(
+        input.schoolId,
+        input.senderId,
+        input.studentId
+      );
+    }
+
     const { data: thread, error: threadError } = await supabase
       .from('message_threads')
       .insert([
@@ -254,7 +367,7 @@ export const messageService = {
           student_id: input.studentId ?? null,
           created_by: input.senderId,
           created_by_role: input.senderRole,
-          created_by_name: input.senderName,
+          created_by_name: displaySenderName,
           last_message_at: now,
           last_message_preview: preview,
           message_count: 1,
@@ -273,7 +386,7 @@ export const messageService = {
         thread_id: thread.id,
         sender_id: input.senderId,
         sender_role: input.senderRole,
-        sender_name: input.senderName,
+        sender_name: displaySenderName,
         body: input.body.trim(),
       },
     ]);
@@ -333,13 +446,22 @@ export const messageService = {
     const preview = trimmed.slice(0, 120);
     const now = new Date().toISOString();
 
+    let displaySenderName = senderName;
+    if (senderRole === 'parent') {
+      displaySenderName = await resolveParentSenderLabel(
+        schoolId,
+        senderId,
+        thread?.studentId
+      );
+    }
+
     const { error: msgError } = await supabase.from('thread_messages').insert([
       {
         school_id: schoolId,
         thread_id: threadId,
         sender_id: senderId,
         sender_role: senderRole,
-        sender_name: senderName,
+        sender_name: displaySenderName,
         body: trimmed,
       },
     ]);

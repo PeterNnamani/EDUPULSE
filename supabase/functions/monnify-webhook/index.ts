@@ -1,22 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
-
-/**
- * MONNIFY EDGE FUNCTION
- *
- * Handles two responsibilities (multi-tenant, per-school credentials):
- *  1. action === "reserve_account": reserve a dedicated virtual account for a student.
- *  2. Monnify webhook (default): confirm an incoming transfer, record the payment,
- *     apply it to fee obligations, generate a receipt and notify finance/parents.
- *
- * Account reference format: `EDU-{schoolId}-{studentId}` so the webhook can route
- * a payment back to the right school + student.
- */
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, monnify-signature",
-};
+import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 
 type Supa = ReturnType<typeof createClient>;
 
@@ -252,7 +235,7 @@ async function handleWebhook(
 
 Deno.serve({ auth: false }, async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response("ok", { headers: corsHeaders(req) });
   }
 
   try {
@@ -270,23 +253,14 @@ Deno.serve({ auth: false }, async (req: Request) => {
       const { schoolId, studentId } = body;
       if (!schoolId || !studentId) throw new Error("schoolId and studentId are required.");
       const result = await reserveAccount(supabase, schoolId, studentId);
-      return new Response(JSON.stringify(result), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-        status: result.success ? 200 : 400,
-      });
+      return jsonResponse(req, result, result.success ? 200 : 400);
     }
 
     // Otherwise treat as a Monnify webhook.
     const result = await handleWebhook(supabase, body);
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: result.success ? 200 : 400,
-    });
+    return jsonResponse(req, result, result.success ? 200 : 400);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    return new Response(JSON.stringify({ success: false, error: message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
-    });
+    return jsonResponse(req, { success: false, error: message }, 500);
   }
 });

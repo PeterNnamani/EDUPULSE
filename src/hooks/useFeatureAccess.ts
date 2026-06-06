@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/store';
-import { getSchoolSubscriptionStatus } from '@/services/subscriptionService';
+import { getSchoolSubscriptionStatus, resolvePlanTierFromStatus } from '@/services/subscriptionService';
 import {
   getPlanDefinition,
-  normalizePlan,
   type FeatureKey,
   type PlanDefinition,
   type PlanTier,
@@ -33,13 +32,13 @@ export function refreshFeatureAccess(schoolId?: string) {
 }
 
 export function useFeatureAccess(): FeatureAccess {
-  const { user, activePlanTier, featureAccessNonce, setActivePlanTier } = useAppStore();
+  const { user, featureAccessNonce } = useAppStore();
   const schoolId = user?.schoolId;
 
   const [state, setState] = useState<{ tier: PlanTier; isTrial: boolean } | null>(
     schoolId ? cache.get(schoolId) ?? null : null
   );
-  const [loading, setLoading] = useState(!state && !activePlanTier);
+  const [loading, setLoading] = useState(!!schoolId && !state);
 
   useEffect(() => {
     let active = true;
@@ -59,18 +58,10 @@ export function useFeatureAccess(): FeatureAccess {
     getSchoolSubscriptionStatus(schoolId)
       .then((status) => {
         if (!active) return;
-        let tier: PlanTier;
-        if (status.activePlan) {
-          tier = normalizePlan(status.activePlan);
-        } else if (status.isTrial && !status.isExpired) {
-          tier = 'enterprise_plus';
-        } else {
-          tier = 'starter';
-        }
+        const tier = resolvePlanTierFromStatus(status);
         const resolved = { tier, isTrial: status.isTrial };
         cache.set(schoolId, resolved);
         setState(resolved);
-        setActivePlanTier(null);
       })
       .catch(() => {
         if (active) setState({ tier: 'starter', isTrial: false });
@@ -82,15 +73,14 @@ export function useFeatureAccess(): FeatureAccess {
     return () => {
       active = false;
     };
-  }, [schoolId, featureAccessNonce, setActivePlanTier]);
+  }, [schoolId, featureAccessNonce]);
 
-  const fetchedTier = state?.tier ?? 'starter';
-  const tier = activePlanTier ?? fetchedTier;
-  const isTrial = activePlanTier ? false : (state?.isTrial ?? false);
+  const tier = state?.tier ?? 'starter';
+  const isTrial = state?.isTrial ?? false;
   const plan = getPlanDefinition(tier);
 
   return {
-    loading: loading && !activePlanTier,
+    loading,
     plan,
     tier,
     isTrial,

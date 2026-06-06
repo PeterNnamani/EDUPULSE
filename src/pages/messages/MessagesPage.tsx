@@ -19,6 +19,45 @@ const AUDIENCE_LABELS: Record<MessageAudience, string> = {
   school_admin: 'School admin',
 };
 
+const SENDER_ROLE_LABELS: Record<string, string> = {
+  admin: 'Admin',
+  principal: 'Principal',
+  teacher: 'Teacher',
+  counselor: 'Counselor',
+  finance: 'Finance',
+  parent: 'Parent',
+};
+
+function formatSenderRole(role: string): string {
+  return SENDER_ROLE_LABELS[role] ?? role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+/** Parents see staff role only — not personal names. */
+function senderLabelForViewer(
+  viewerRole: string | undefined,
+  senderRole: string,
+  senderName: string
+): string {
+  if (viewerRole === 'parent' && senderRole !== 'parent') {
+    return formatSenderRole(senderRole);
+  }
+  return senderName;
+}
+
+function threadStarterLabelForViewer(
+  viewerRole: string | undefined,
+  thread: MessageThread,
+  viewerId: string
+): string | null {
+  if (viewerRole === 'parent') {
+    if (thread.createdBy === viewerId) return null;
+    if (thread.createdByRole === 'parent') return thread.createdByName;
+    return formatSenderRole(thread.createdByRole);
+  }
+  if (thread.createdByRole === 'parent') return thread.createdByName;
+  return thread.createdByName ? thread.createdByName : null;
+}
+
 function formatTime(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
@@ -68,10 +107,13 @@ export default function MessagesPage() {
   );
 
   const loadMessages = useCallback(
-    async (threadId: string) => {
-      const rows = await messageService.getMessages(threadId);
+    async (threadId: string, threadStudentId?: string | null) => {
+      if (!schoolId) return;
+      const rows = await messageService.getMessages(schoolId, threadId, {
+        studentId: threadStudentId,
+      });
       setMessages(rows);
-      if (schoolId && userId) {
+      if (userId) {
         await messageService.markRead(schoolId, threadId, userId);
       }
       setThreads((prev) =>
@@ -109,7 +151,8 @@ export default function MessagesPage() {
       return;
     }
 
-    void loadMessages(activeId);
+    const thread = threads.find((t) => t.id === activeId);
+    void loadMessages(activeId, thread?.studentId);
 
     setSearchParams(
       (prev) => {
@@ -120,7 +163,7 @@ export default function MessagesPage() {
       },
       { replace: true }
     );
-  }, [activeId, loadMessages, setSearchParams]);
+  }, [activeId, loadMessages, setSearchParams, threads]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -141,7 +184,10 @@ export default function MessagesPage() {
           filter: `school_id=eq.${schoolId}`,
         },
         () => {
-          if (activeId) void loadMessages(activeId);
+          if (activeId) {
+            const thread = threads.find((t) => t.id === activeId);
+            void loadMessages(activeId, thread?.studentId);
+          }
           void loadInbox(false);
         }
       )
@@ -169,7 +215,7 @@ export default function MessagesPage() {
     setSending(false);
     if (result.success) {
       setDraft('');
-      await loadMessages(activeId);
+      await loadMessages(activeId, activeThread?.studentId);
       await loadInbox(false);
     }
   };
@@ -234,6 +280,18 @@ export default function MessagesPage() {
                     <p className={`text-sm truncate ${t.unread ? 'font-bold' : 'font-medium'}`}>{t.subject}</p>
                     {t.unread && <span className="w-2 h-2 rounded-full bg-green-500 shrink-0 mt-1.5" />}
                   </div>
+                  {role !== 'parent' && t.createdByRole === 'parent' && (
+                    <p className="text-[10px] text-secondary-text truncate mt-0.5 leading-tight">
+                      {t.createdByName}
+                    </p>
+                  )}
+                  {role === 'parent' &&
+                    t.createdBy !== userId &&
+                    t.createdByRole !== 'parent' && (
+                      <p className="text-[10px] text-secondary-text truncate mt-0.5 leading-tight">
+                        {formatSenderRole(t.createdByRole)}
+                      </p>
+                    )}
                   <p className="text-xs text-secondary-text truncate mt-0.5">{t.lastMessagePreview}</p>
                   <p className="text-[10px] text-secondary-text mt-1">
                     {AUDIENCE_LABELS[t.audience] ?? t.audience} · {formatTime(t.lastMessageAt)}
@@ -251,7 +309,17 @@ export default function MessagesPage() {
                 <h2 className="font-semibold">{activeThread.subject}</h2>
                 <p className="text-xs text-secondary-text">
                   {AUDIENCE_LABELS[activeThread.audience] ?? activeThread.audience}
-                  {activeThread.createdByName ? ` · started by ${activeThread.createdByName}` : ''}
+                  {(() => {
+                    const starter = threadStarterLabelForViewer(role, activeThread, userId ?? '');
+                    if (!starter) return null;
+                    return role === 'parent' ? (
+                      <span className="block text-[10px] truncate mt-0.5">{starter}</span>
+                    ) : activeThread.createdByRole === 'parent' ? (
+                      <span className="block text-[10px] truncate mt-0.5">{starter}</span>
+                    ) : (
+                      ` · started by ${starter}`
+                    );
+                  })()}
                 </p>
               </div>
 
@@ -268,7 +336,15 @@ export default function MessagesPage() {
                         }`}
                       >
                         {!mine && (
-                          <p className="text-[10px] font-semibold opacity-70 mb-0.5">{m.senderName}</p>
+                          <p
+                            className={`text-[10px] leading-tight mb-0.5 truncate max-w-full ${
+                              m.senderRole === 'parent'
+                                ? 'font-medium opacity-80'
+                                : 'font-semibold opacity-70'
+                            }`}
+                          >
+                            {senderLabelForViewer(role, m.senderRole, m.senderName)}
+                          </p>
                         )}
                         <p className="whitespace-pre-wrap break-words">{m.body}</p>
                         <p className={`text-[10px] mt-1 ${mine ? 'opacity-70' : 'text-secondary-text'}`}>

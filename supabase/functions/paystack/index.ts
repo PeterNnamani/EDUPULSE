@@ -1,10 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.0";
-
-const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders, jsonResponse } from "../_shared/cors.ts";
 
 interface PlanPayload {
     plan: string;
@@ -188,7 +183,7 @@ async function fulfillSubscription(
 
 Deno.serve({ auth: false }, async (req: Request) => {
     if (req.method === "OPTIONS") {
-        return new Response("ok", { headers: corsHeaders });
+        return new Response("ok", { headers: corsHeaders(req) });
     }
 
     const result: VerificationResult = {
@@ -218,10 +213,7 @@ Deno.serve({ auth: false }, async (req: Request) => {
         const paystackResult = await verifyWithPaystack(reference);
         if (!paystackResult.verified) {
             result.paystackResponse = paystackResult.response;
-            return new Response(
-                JSON.stringify({ ...result, error: `Paystack verification failed: ${paystackResult.error}` }),
-                { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
-            );
+            return jsonResponse(req, { ...result, error: `Paystack verification failed: ${paystackResult.error}` }, 400);
         }
 
         result.paystackVerified = true;
@@ -245,26 +237,17 @@ Deno.serve({ auth: false }, async (req: Request) => {
         );
 
         if (!subscriptionResult.success) {
-            return new Response(
-                JSON.stringify({ ...result, error: subscriptionResult.error }),
-                { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
-            );
+            return jsonResponse(req, { ...result, error: subscriptionResult.error }, 400);
         }
 
         result.subscriptionUpdated = true;
         result.subscriptionId = subscriptionResult.subscriptionId;
         result.success = true;
 
-        return new Response(JSON.stringify(result), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 200,
-        });
+        return jsonResponse(req, result);
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "Unknown error";
         addLog("Payment verification failed", "error", { error: errorMessage });
-        return new Response(JSON.stringify({ ...result, error: errorMessage }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-            status: 500,
-        });
+        return jsonResponse(req, { ...result, error: errorMessage }, 500);
     }
 });

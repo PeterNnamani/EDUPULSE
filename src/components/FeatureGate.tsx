@@ -1,7 +1,9 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Lock, Loader, ArrowRight } from 'lucide-react';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import { useAppStore } from '@/store';
+import { schoolHasFeature } from '@/services/subscriptionService';
 import { type FeatureKey } from '@/config/planFeatures';
 
 interface Props {
@@ -13,13 +15,36 @@ interface Props {
 }
 
 /**
- * Gate a page or section behind a plan feature. If the school's plan does not
- * include the feature, an upgrade prompt (or a custom/silent fallback) is shown.
+ * Gate a page or section behind a plan feature.
+ * Verifies entitlement against live subscription data (not client store overrides).
  */
 export default function FeatureGate({ feature, children, silent, fallback }: Props) {
+  const { user, featureAccessNonce } = useAppStore();
   const { loading, hasFeature, plan } = useFeatureAccess();
+  const [serverVerified, setServerVerified] = useState<boolean | null>(null);
 
-  if (loading) {
+  useEffect(() => {
+    if (!user?.schoolId) {
+      setServerVerified(false);
+      return;
+    }
+
+    let active = true;
+    setServerVerified(null);
+    schoolHasFeature(user.schoolId, feature)
+      .then((allowed) => {
+        if (active) setServerVerified(allowed);
+      })
+      .catch(() => {
+        if (active) setServerVerified(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user?.schoolId, feature, featureAccessNonce]);
+
+  if (loading || serverVerified === null) {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader className="w-6 h-6 animate-spin" />
@@ -27,7 +52,8 @@ export default function FeatureGate({ feature, children, silent, fallback }: Pro
     );
   }
 
-  if (hasFeature(feature)) return <>{children}</>;
+  const allowed = hasFeature(feature) && serverVerified;
+  if (allowed) return <>{children}</>;
 
   if (silent) return null;
   if (fallback) return <>{fallback}</>;

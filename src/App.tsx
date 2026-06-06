@@ -19,7 +19,6 @@ import PrincipalBehaviourOverview from '@/pages/principal/BehaviourOverview';
 import CounselorDashboard from '@/pages/counselor/Dashboard';
 import FinanceDashboard from '@/pages/finance/Dashboard';
 import ReconciliationPage from '@/pages/finance/ReconciliationPage';
-import FeatureGate from '@/components/FeatureGate';
 import ParentDashboard from '@/pages/parent/Dashboard';
 import StudentManagement from '@/pages/admin/StudentManagement';
 import StaffManagement from '@/pages/admin/StaffManagement';
@@ -49,6 +48,8 @@ import ParentAssignments from '@/pages/parent/ParentAssignments';
 import ParentBehaviour from '@/pages/parent/ParentBehaviour';
 import Layout from '@/components/Layout';
 import MessagesPage from '@/pages/messages/MessagesPage';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import { ROLES } from '@/config/routeAccess';
 
 function AppContent() {
   const { onboardingComplete, selectedRole, isAuthenticated, darkMode, user } = useAppStore();
@@ -117,95 +118,310 @@ function AppContent() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/admin/students" element={<StudentManagement />} />
-        <Route path="/admin/staff" element={<StaffManagement />} />
-        <Route path="/admin/classes" element={<ClassManagement />} />
-        <Route path="/admin/subjects" element={<SubjectsManagement />} />
-        <Route path="/admin/subscriptions" element={<SubscriptionsPage />} />
-        <Route path="/admin/fee-settings" element={<FeeSettingsPage />} />
-        <Route path="/admin/academic-calendar" element={<AcademicCalendarSettings />} />
-        <Route path="/admin/academic-lifecycle" element={<AcademicLifecyclePage />} />
-        <Route path="/admin/report-cards" element={<ReportCardsPage />} />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/students"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <StudentManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/staff"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <StaffManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/classes"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <ClassManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/subjects"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <SubjectsManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/subscriptions"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <SubscriptionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/fee-settings"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <FeeSettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/academic-calendar"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <AcademicCalendarSettings />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/academic-lifecycle"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <AcademicLifecyclePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/report-cards"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.admin}>
+              <ReportCardsPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/admin/teacher-activity"
           element={
-            <FeatureGate feature="teacher_activity">
+            <ProtectedRoute allowedRoles={ROLES.adminPrincipal} feature="teacher_activity">
               <TeacherActivityPage />
-            </FeatureGate>
+            </ProtectedRoute>
           }
         />
         <Route
           path="/admin/audit-logs"
           element={
-            <FeatureGate feature="audit_logs">
+            <ProtectedRoute allowedRoles={ROLES.admin} feature="audit_logs">
               <AuditLogPage />
-            </FeatureGate>
+            </ProtectedRoute>
           }
         />
-        <Route path="/teacher" element={<TeacherDashboard />} />
-        <Route path="/principal" element={<PrincipalDashboard />} />
-        <Route path="/principal/students" element={<PrincipalStudentsOverview />} />
-        <Route path="/principal/staff" element={<PrincipalStaffOverview />} />
-        <Route path="/principal/attendance" element={<PrincipalAttendanceOverview />} />
-        <Route path="/principal/behaviour" element={<PrincipalBehaviourOverview />} />
-        <Route path="/counselor" element={<CounselorDashboard />} />
-        <Route path="/finance" element={<FinanceDashboard />} />
+        <Route
+          path="/teacher"
+          element={
+            <ProtectedRoute allowedRoles={['teacher']}>
+              <TeacherDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/principal"
+          element={
+            <ProtectedRoute allowedRoles={['principal']}>
+              <PrincipalDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/principal/students"
+          element={
+            <ProtectedRoute allowedRoles={['principal']}>
+              <PrincipalStudentsOverview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/principal/staff"
+          element={
+            <ProtectedRoute allowedRoles={['principal']}>
+              <PrincipalStaffOverview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/principal/attendance"
+          element={
+            <ProtectedRoute allowedRoles={['principal']}>
+              <PrincipalAttendanceOverview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/principal/behaviour"
+          element={
+            <ProtectedRoute allowedRoles={['principal']}>
+              <PrincipalBehaviourOverview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/counselor"
+          element={
+            <ProtectedRoute allowedRoles={['counselor']}>
+              <CounselorDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/finance"
+          element={
+            <ProtectedRoute allowedRoles={['finance']}>
+              <FinanceDashboard />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/finance/reconciliation"
           element={
-            <FeatureGate feature="reconciliation">
+            <ProtectedRoute allowedRoles={ROLES.finance} feature="reconciliation">
               <ReconciliationPage />
-            </FeatureGate>
+            </ProtectedRoute>
           }
         />
-        <Route path="/parent" element={<ParentDashboard />} />
+        <Route
+          path="/parent"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.parent}>
+              <ParentDashboard />
+            </ProtectedRoute>
+          }
+        />
 
-        {/* Teacher/Staff Pages */}
-        <Route path="/attendance" element={user?.role === 'parent' ? <ParentAttendance /> : <AttendancePage />} />
+        <Route
+          path="/attendance"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.staffTeaching}>
+              <AttendancePage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/duty-attendance"
           element={
-            <FeatureGate feature="duty_attendance">
+            <ProtectedRoute allowedRoles={ROLES.staffTeaching} feature="duty_attendance">
               <DutyAttendancePage />
-            </FeatureGate>
+            </ProtectedRoute>
           }
         />
-        <Route path="/grades" element={user?.role === 'parent' ? <ParentGrades /> : <GradesPage />} />
-        <Route path="/assignments" element={user?.role === 'parent' ? <ParentAssignments /> : <AssignmentsPage />} />
-        <Route path="/behaviour" element={user?.role === 'parent' ? <ParentBehaviour /> : <BehaviourPage />} />
+        <Route
+          path="/grades"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'teacher', 'principal']}>
+              <GradesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/assignments"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'teacher', 'principal']}>
+              <AssignmentsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/behaviour"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'teacher', 'principal', 'counselor']}>
+              <BehaviourPage />
+            </ProtectedRoute>
+          }
+        />
 
-        {/* Parent-specific Pages */}
-        <Route path="/parent/attendance" element={<ParentAttendance />} />
-        <Route path="/parent/grades" element={<ParentGrades />} />
-        <Route path="/parent/assignments" element={<ParentAssignments />} />
-        <Route path="/parent/behaviour" element={<ParentBehaviour />} />
-        <Route path="/fees" element={<FeesPage />} />
+        <Route
+          path="/parent/attendance"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.parent}>
+              <ParentAttendance />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/parent/grades"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.parent}>
+              <ParentGrades />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/parent/assignments"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.parent}>
+              <ParentAssignments />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/parent/behaviour"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.parent}>
+              <ParentBehaviour />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/fees"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.finance}>
+              <FeesPage />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/risk"
           element={
-            <FeatureGate feature="risk_detection">
+            <ProtectedRoute allowedRoles={ROLES.riskTeam} feature="risk_detection">
               <RiskAnalysisPage />
-            </FeatureGate>
+            </ProtectedRoute>
           }
         />
         <Route
           path="/interventions"
           element={
-            <FeatureGate feature="interventions">
+            <ProtectedRoute allowedRoles={ROLES.riskTeam} feature="interventions">
               <InterventionsPage />
-            </FeatureGate>
+            </ProtectedRoute>
           }
         />
-        <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/notifications" element={<NotificationCenter />} />
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute allowedRoles={['admin', 'teacher', 'principal', 'counselor', 'finance']}>
+              <ReportsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.everyone}>
+              <SettingsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/notifications"
+          element={
+            <ProtectedRoute allowedRoles={ROLES.everyone}>
+              <NotificationCenter />
+            </ProtectedRoute>
+          }
+        />
         <Route
           path="/messages"
           element={
-            <FeatureGate feature="school_messaging">
+            <ProtectedRoute allowedRoles={ROLES.messaging} feature="school_messaging">
               <MessagesPage />
-            </FeatureGate>
+            </ProtectedRoute>
           }
         />
         <Route path="/" element={<Navigate to={getDashboardRoute()} replace />} />

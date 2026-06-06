@@ -65,24 +65,17 @@ export default function ClassManagement() {
       // Fetch fees for each class
       const classesWithFees = await Promise.all(
         classesData.map(async (cls: any) => {
-          try {
-            const { data: feeData } = await supabase
-              .from('fees')
-              .select('amount')
-              .eq('class_id', cls.id)
-              .eq('is_active', true)
-              .single();
+          const { data: feeData } = await supabase
+            .from('fees')
+            .select('amount')
+            .eq('class_id', cls.id)
+            .eq('is_active', true)
+            .maybeSingle();
 
-            return {
-              ...cls,
-              fee: feeData?.amount || 0,
-            };
-          } catch (e) {
-            return {
-              ...cls,
-              fee: 0,
-            };
-          }
+          return {
+            ...cls,
+            fee: Number(feeData?.amount ?? 0),
+          };
         })
       );
 
@@ -122,34 +115,40 @@ export default function ClassManagement() {
       });
 
       if (result.success) {
+        const classId = result.classId ?? result.data?.id;
+        const feeAmount = parseFloat(formData.fee) || 0;
+
         // Flag early-years classes for rating-based assessment.
-        if (result.classId && isEarlyYearsLevel(formData.gradeLevel)) {
+        if (classId && isEarlyYearsLevel(formData.gradeLevel)) {
           await supabase
             .from('classes')
             .update({ is_early_years: true })
-            .eq('id', result.classId);
+            .eq('id', classId);
         }
 
         // Create fee record for this class
-        if (parseFloat(formData.fee) > 0 && result.classId) {
+        if (feeAmount > 0 && classId) {
           const { error: feeError } = await supabase
             .from('fees')
             .insert({
               school_id: user.schoolId,
-              class_id: result.classId,
-              amount: parseFloat(formData.fee),
+              class_id: classId,
+              amount: feeAmount,
               currency: 'NGN',
               is_active: true,
             });
 
           if (feeError) {
-            console.warn('Warning: Fee created but could not save to database:', feeError);
-          } else {
-            console.log('✓ Fee created for class:', className);
+            console.warn('Warning: Class created but fee could not be saved:', feeError);
+            alert(`Class created, but the fee could not be saved: ${feeError.message}`);
           }
         }
 
-        setSuccessMessage(`Class ${className} created successfully!`);
+        setSuccessMessage(
+          feeAmount > 0
+            ? `Class ${className} created with fee NGN ${feeAmount.toLocaleString()}!`
+            : `Class ${className} created successfully!`
+        );
         setShowSuccessModal(true);
         setShowAddModal(false);
         resetForm();
@@ -276,10 +275,10 @@ export default function ClassManagement() {
         .select('amount')
         .eq('class_id', cls.id)
         .eq('is_active', true)
-        .single();
+        .maybeSingle();
 
       if (feeData) {
-        classFee = feeData.amount;
+        classFee = Number(feeData.amount);
       }
     } catch (e) {
       console.warn('Could not fetch fee for class:', e);
@@ -360,13 +359,13 @@ export default function ClassManagement() {
                     style={{ width: `${cls.capacity > 0 ? (cls.students / cls.capacity) * 100 : 0}%` }}
                   />
                 </div>
-                {cls.fee > 0 && (
-                  <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-gray-800">
-                    <DollarSign className="w-4 h-4 text-green-600" />
-                    <span className="text-sm text-secondary-text">Fee:</span>
-                    <span className="font-medium text-green-600">NGN {cls.fee.toLocaleString()}</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-gray-800">
+                  <DollarSign className={`w-4 h-4 ${cls.fee > 0 ? 'text-green-600 dark:text-green-400' : 'text-secondary-text'}`} />
+                  <span className="text-sm text-secondary-text">Fee:</span>
+                  <span className={`font-medium ${cls.fee > 0 ? 'text-green-600 dark:text-green-400' : 'text-secondary-text'}`}>
+                    {cls.fee > 0 ? `NGN ${cls.fee.toLocaleString()}` : 'Not set'}
+                  </span>
+                </div>
               </div>
             </motion.div>
           ))}

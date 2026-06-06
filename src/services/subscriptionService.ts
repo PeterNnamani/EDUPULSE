@@ -2,7 +2,9 @@ import { supabase } from '@/lib/supabase';
 import { notificationTriggerService } from './notificationTriggerService';
 import {
   normalizePlan,
+  getPlanDefinition,
   planTierRank,
+  type FeatureKey,
   type PlanTier,
   PLAN_DEFINITIONS,
 } from '@/config/planFeatures';
@@ -210,6 +212,24 @@ export async function getSchoolSubscriptionStatus(schoolId: string): Promise<Sch
     activePaidPlans,
     label,
   };
+}
+
+/** Resolve effective plan tier from subscription status (server source of truth). */
+export function resolvePlanTierFromStatus(status: SchoolSubscriptionStatus): PlanTier {
+  if (status.activePlan) {
+    return normalizePlan(status.activePlan);
+  }
+  if (status.isTrial && !status.isExpired) {
+    return 'enterprise_plus';
+  }
+  return 'starter';
+}
+
+/** Verify a feature against live subscription data — used by FeatureGate. */
+export async function schoolHasFeature(schoolId: string, feature: FeatureKey): Promise<boolean> {
+  const status = await getSchoolSubscriptionStatus(schoolId);
+  const tier = resolvePlanTierFromStatus(status);
+  return getPlanDefinition(tier).features[feature];
 }
 
 async function getAdminStaffIds(schoolId: string): Promise<string[]> {

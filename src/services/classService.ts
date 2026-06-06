@@ -26,6 +26,8 @@ interface CreateClassRequest {
 
 interface CreateClassResponse {
     success: boolean;
+    /** Convenience alias for data.id */
+    classId?: string;
     data?: ClassData;
     error?: string;
 }
@@ -72,6 +74,7 @@ export async function createClass(
 
         return {
             success: true,
+            classId: newClass.id,
             data: {
                 id: newClass.id,
                 school_id: newClass.school_id,
