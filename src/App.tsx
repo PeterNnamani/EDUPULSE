@@ -49,6 +49,7 @@ import ParentBehaviour from '@/pages/parent/ParentBehaviour';
 import Layout from '@/components/Layout';
 import MessagesPage from '@/pages/messages/MessagesPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import CleanUrlBar, { RestoreAppPath } from '@/components/CleanUrlBar';
 import { ROLES } from '@/config/routeAccess';
 
 function AppContent() {
@@ -436,6 +437,8 @@ function App() {
     <QueryProvider>
       <NotificationProvider>
         <BrowserRouter>
+          <RestoreAppPath />
+          <CleanUrlBar />
           <AppContent />
           <ToastContainer />
         </BrowserRouter>

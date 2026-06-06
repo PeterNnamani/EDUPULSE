@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { clearStoredAppPath } from '@/components/CleanUrlBar';
 import type { User, UserRole, SchoolState } from '@/types';
 import type { PlanTier } from '@/config/planFeatures';
 
@@ -58,6 +59,7 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ featureAccessNonce: state.featureAccessNonce + 1 })),
       logout: () => set((state) => {
         const u = state.user;
+        clearStoredAppPath();
         if (u?.role === 'teacher' && u.schoolId) {
           void import('@/services/teacherActivityService').then(({ teacherActivityService }) => {
             void teacherActivityService.logActivity({
