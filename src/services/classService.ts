@@ -1,3 +1,4 @@
+import { unwrapJoin } from '@/utils/displayUtils';
 import { supabase } from '@/lib/supabase';
 
 interface ClassData {
@@ -334,13 +335,15 @@ export async function getTeacherTeachingLoad(
 
         for (const row of classSubjectsRes.data ?? []) {
             const classId = row.class_id as string;
-            const cls = row.classes as {
-                id: string;
-                name: string;
-                grade_level?: string;
-                section?: string;
-            } | null;
-            const sub = row.subjects as { id: string; name: string; code?: string } | null;
+            const cls = unwrapJoin(
+                row.classes as
+                    | { id: string; name: string; grade_level?: string; section?: string }
+                    | { id: string; name: string; grade_level?: string; section?: string }[]
+                    | null
+            );
+            const sub = unwrapJoin(
+                row.subjects as { id: string; name: string; code?: string } | { id: string; name: string; code?: string }[] | null
+            );
             if (!cls) continue;
 
             if (!classMap.has(classId)) {
@@ -380,7 +383,9 @@ export async function getTeacherTeachingLoad(
 
         const generalSubjects: TeacherSubjectSlot[] = [];
         for (const row of staffSubjectsRes.data ?? []) {
-            const sub = row.subjects as { id: string; name: string; code?: string } | null;
+            const sub = unwrapJoin(
+                row.subjects as { id: string; name: string; code?: string } | { id: string; name: string; code?: string }[] | null
+            );
             if (!sub || linkedSubjectIds.has(sub.id)) continue;
             if (!generalSubjects.some((s) => s.subjectId === sub.id)) {
                 generalSubjects.push({

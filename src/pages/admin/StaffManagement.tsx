@@ -5,7 +5,7 @@ import { useAppStore } from '@/store';
 import { createStaff, updateStaff } from '@/services/authService';
 import { notificationTriggerService } from '@/services/notificationTriggerService';
 import { supabase } from '@/lib/supabase';
-import { getInitialsFromName } from '@/utils/displayUtils';
+import { getInitialsFromName, unwrapJoin } from '@/utils/displayUtils';
 import StaffTeachingAssignments from '@/components/admin/StaffTeachingAssignments';
 import { buildStaffTeachingMap } from '@/utils/staffTeachingMap';
 
@@ -156,7 +156,7 @@ export default function StaffManagement() {
         name: cls.name,
         grade_level: cls.grade_level,
         class_teacher_id: cls.class_teacher_id,
-        class_teacher_name: cls.staff?.full_name,
+        class_teacher_name: unwrapJoin<{ full_name?: string }>(cls.staff)?.full_name,
       }));
 
       setClassList(formattedClasses);

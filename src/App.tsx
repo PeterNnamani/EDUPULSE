@@ -26,6 +26,7 @@ import ClassManagement from '@/pages/admin/ClassManagement';
 import SubjectsManagement from '@/pages/admin/SubjectsManagement';
 import AttendancePage from '@/pages/attendance/AttendancePage';
 import DutyAttendancePage from '@/pages/attendance/DutyAttendancePage';
+import DutyRouteGuard from '@/components/DutyRouteGuard';
 import GradesPage from '@/pages/grades/GradesPage';
 import AssignmentsPage from '@/pages/assignments/AssignmentsPage';
 import BehaviourPage from '@/pages/behaviour/BehaviourPage';
@@ -308,7 +309,9 @@ function AppContent() {
           path="/duty-attendance"
           element={
             <ProtectedRoute allowedRoles={ROLES.staffTeaching} feature="duty_attendance">
-              <DutyAttendancePage />
+              <DutyRouteGuard>
+                <DutyAttendancePage />
+              </DutyRouteGuard>
             </ProtectedRoute>
           }
         />

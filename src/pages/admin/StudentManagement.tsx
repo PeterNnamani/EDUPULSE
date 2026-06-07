@@ -363,11 +363,25 @@ export default function StudentManagement() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => openEditModal(student)} className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors">
-                        <Edit2 className="w-4 h-4" />
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(student)}
+                        className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        Edit
                       </button>
-                      <button className="p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors text-red-500">
-                        <Trash2 className="w-4 h-4" />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm(`Mark ${student.first_name} ${student.last_name} as inactive?`)) return;
+                          await updateStudent(student.id, { status: 'inactive' });
+                          await loadData();
+                        }}
+                        className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Deactivate
                       </button>
                     </div>
                   </td>

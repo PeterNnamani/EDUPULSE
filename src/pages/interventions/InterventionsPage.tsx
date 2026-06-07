@@ -174,13 +174,26 @@ export default function InterventionsPage() {
               className = classData?.name || 'N/A';
             }
 
-            // Get counselor info (assigned_to_id is auth.users id)
-            const { data: counselor } = await supabase
+            // assigned_to_id references staff.id (legacy rows may still use auth user_id)
+            let counselorName: string | undefined;
+            const { data: counselorByStaffId } = await supabase
               .from('staff')
               .select('full_name')
               .eq('school_id', user!.schoolId)
-              .eq('user_id', caseItem.assigned_to_id)
+              .eq('id', caseItem.assigned_to_id)
               .maybeSingle();
+
+            if (counselorByStaffId?.full_name) {
+              counselorName = counselorByStaffId.full_name;
+            } else {
+              const { data: counselorByAuthId } = await supabase
+                .from('staff')
+                .select('full_name')
+                .eq('school_id', user!.schoolId)
+                .eq('user_id', caseItem.assigned_to_id)
+                .maybeSingle();
+              counselorName = counselorByAuthId?.full_name;
+            }
 
             // Calculate progress (based on activities)
             const { data: activities } = await supabase
@@ -204,7 +217,7 @@ export default function InterventionsPage() {
               type: caseItem.case_category.replace('_intervention', '').replace('_', ' ').toUpperCase(),
               status: caseItem.status,
               priority: caseItem.priority,
-              counselor: counselor?.full_name ?? 'Unassigned',
+              counselor: counselorName ?? 'Unassigned',
               startDate,
               progress: Math.round(progress)
             };

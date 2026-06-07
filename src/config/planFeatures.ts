@@ -64,8 +64,8 @@ export const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
   starter: {
     id: 'starter',
     name: 'Starter',
-    monthlyPrice: 15000,
-    annualPrice: 150000,
+    monthlyPrice: 49000,
+    annualPrice: 490000,
     maxStudents: 300,
     tagline: 'Essentials for small schools',
     features: featureSet(['birthday_automation', 'preschool_assessment']),
@@ -80,8 +80,8 @@ export const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
   growth: {
     id: 'growth',
     name: 'Growth',
-    monthlyPrice: 35000,
-    annualPrice: 350000,
+    monthlyPrice: 99000,
+    annualPrice: 990000,
     maxStudents: 1000,
     popular: true,
     tagline: 'For growing schools that need insight',
@@ -108,8 +108,8 @@ export const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
-    monthlyPrice: 75000,
-    annualPrice: 750000,
+    monthlyPrice: 199000,
+    annualPrice: 1990000,
     maxStudents: Infinity,
     tagline: 'Full platform for large institutions',
     features: featureSet([
@@ -142,8 +142,8 @@ export const PLAN_DEFINITIONS: Record<PlanTier, PlanDefinition> = {
   enterprise_plus: {
     id: 'enterprise_plus',
     name: 'Enterprise Plus',
-    monthlyPrice: 150000,
-    annualPrice: 1500000,
+    monthlyPrice: 349000,
+    annualPrice: 3490000,
     maxStudents: Infinity,
     tagline: 'Premium support & every feature',
     features: featureSet(ALL_FEATURES),

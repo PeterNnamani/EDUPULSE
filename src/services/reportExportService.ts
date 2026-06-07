@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import { getTeacherTeachingLoad } from '@/services/classService';
+import { unwrapJoin } from '@/utils/displayUtils';
 import type { UserRole } from '@/types';
 
 export type ReportCategory =
@@ -25,6 +26,19 @@ export interface ReportExportOptions {
 
 /** undefined = school-wide; [] = teacher with no assigned classes */
 export type ReportClassScope = string[] | undefined;
+
+function joinedStudentName(students: unknown): string {
+  const student = unwrapJoin<{ first_name?: string; last_name?: string }>(students);
+  if (!student) return 'Unknown';
+  const name = `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim();
+  return name || 'Unknown';
+}
+
+function joinedField(value: unknown, field: string, fallback = 'N/A'): string {
+  const row = unwrapJoin<Record<string, string | null | undefined>>(value);
+  const text = row?.[field];
+  return text != null && String(text).trim() !== '' ? String(text) : fallback;
+}
 
 export async function resolveReportClassScope(
   schoolId: string,
@@ -72,14 +86,13 @@ async function fetchReportRows(
 
       if (classIds) query = query.in('class_id', classIds);
 
-      const { data } = await query;
+      const { data, error } = await query;
+      if (error) console.error('[reportExport] attendance query failed:', error);
 
       const rows = (data ?? []).map((r: any) => ({
         Date: r.date ?? '',
-        Student: r.students
-          ? `${r.students.first_name} ${r.students.last_name}`
-          : 'Unknown',
-        Class: r.classes?.name ?? 'N/A',
+        Student: joinedStudentName(r.students),
+        Class: joinedField(r.classes, 'name'),
         Status: r.status ?? '',
       }));
 
@@ -102,14 +115,13 @@ async function fetchReportRows(
 
       if (classIds) query = query.in('class_id', classIds);
 
-      const { data } = await query;
+      const { data, error } = await query;
+      if (error) console.error('[reportExport] academic query failed:', error);
 
       const rows = (data ?? []).map((r: any) => ({
-        Student: r.students
-          ? `${r.students.first_name} ${r.students.last_name}`
-          : 'Unknown',
-        Class: r.classes?.name ?? 'N/A',
-        Subject: r.subjects?.name ?? 'N/A',
+        Student: joinedStudentName(r.students),
+        Class: joinedField(r.classes, 'name'),
+        Subject: joinedField(r.subjects, 'name'),
         Assessment: r.assessment_type ?? '',
         Score: r.score ?? 0,
         'Max Score': r.max_score ?? 100,
@@ -138,14 +150,13 @@ async function fetchReportRows(
 
       if (classIds) query = query.in('class_id', classIds);
 
-      const { data } = await query;
+      const { data, error } = await query;
+      if (error) console.error('[reportExport] behaviour query failed:', error);
 
       const rows = (data ?? []).map((r: any) => ({
         Date: r.created_at ? new Date(r.created_at).toLocaleDateString() : '',
-        Student: r.students
-          ? `${r.students.first_name} ${r.students.last_name}`
-          : 'Unknown',
-        Class: r.classes?.name ?? 'N/A',
+        Student: joinedStudentName(r.students),
+        Class: joinedField(r.classes, 'name'),
         Type: r.behaviour_type ?? '',
         Points: r.points ?? 0,
         Description: r.description ?? '',
@@ -228,7 +239,7 @@ async function fetchReportRows(
     }
 
     case 'financial': {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('fee_obligations')
         .select(
           'amount_due, amount_paid, status, due_date, students(first_name, last_name), fee_structures(name)'
@@ -237,11 +248,11 @@ async function fetchReportRows(
         .order('due_date', { ascending: false })
         .limit(500);
 
+      if (error) console.error('[reportExport] financial query failed:', error);
+
       const rows = (data ?? []).map((r: any) => ({
-        Student: r.students
-          ? `${r.students.first_name} ${r.students.last_name}`
-          : 'Unknown',
-        Fee: r.fee_structures?.name ?? 'Fee',
+        Student: joinedStudentName(r.students),
+        Fee: joinedField(r.fee_structures, 'name', 'Fee'),
         'Amount Due': r.amount_due ?? 0,
         'Amount Paid': r.amount_paid ?? 0,
         Outstanding: (r.amount_due ?? 0) - (r.amount_paid ?? 0),
@@ -268,9 +279,11 @@ async function fetchReportRows(
 
       const { data: students } = await studentQuery;
 
-      const classIds = [...new Set((students ?? []).map((s) => s.class_id).filter(Boolean))];
-      const { data: classes } = classIds.length
-        ? await supabase.from('classes').select('id, name').in('id', classIds)
+      const studentClassIds = [
+        ...new Set((students ?? []).map((s) => s.class_id).filter(Boolean)),
+      ] as string[];
+      const { data: classes } = studentClassIds.length
+        ? await supabase.from('classes').select('id, name').in('id', studentClassIds)
         : { data: [] };
 
       const classMap = new Map((classes ?? []).map((c) => [c.id, c.name]));

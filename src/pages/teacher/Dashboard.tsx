@@ -7,6 +7,7 @@ import { useAppStore } from '@/store';
 import { getTeacherClasses, getClassStudents } from '@/services/classService';
 import { getTeacherAssignments, getAssignmentStats } from '@/services/assignmentService';
 import { supabase } from '@/lib/supabase';
+import OnDutyWidget from '@/components/dashboard/OnDutyWidget';
 
 interface TeacherClass {
   id: string;
@@ -145,6 +146,8 @@ export default function TeacherDashboard() {
           </div>
         </div>
       </motion.div>
+
+      {user?.schoolId && <OnDutyWidget schoolId={user.schoolId} />}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

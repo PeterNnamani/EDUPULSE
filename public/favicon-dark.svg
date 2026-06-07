@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="EduPulse">
+  <path
+    fill="none"
+    stroke="#fafafa"
+    stroke-width="2.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    d="M2 16h5.5l2.2-7.2L14.2 22l2.8-9.2L19.8 16H30"
+  />
+</svg>

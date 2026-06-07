@@ -27,6 +27,12 @@ export function safeFullName(first?: string | null, last?: string | null, fallba
   return name || fallback;
 }
 
+/** Supabase embedded joins may return an object or a one-element array. */
+export function unwrapJoin<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null;
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
 /** Format a number safely; returns `fallback` for null/undefined/NaN. */
 export function safeNumber(value: unknown, fallback = 0): number {
   const n = typeof value === 'number' ? value : Number(value);

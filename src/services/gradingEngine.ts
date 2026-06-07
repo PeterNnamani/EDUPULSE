@@ -80,7 +80,18 @@ export const gradingEngine = {
                 .order('max_score', { ascending: false });
 
             if (error) throw error;
-            return data || [];
+            return (data ?? []).map((row) => ({
+                id: row.id,
+                gradingScaleId: row.grading_scale_id,
+                minScore: Number(row.min_score ?? 0),
+                maxScore: Number(row.max_score ?? 0),
+                gradeLetter: row.grade_letter ?? '',
+                gradePoint: Number(row.grade_point ?? 0),
+                remark: row.remark ?? '',
+                description: row.description ?? undefined,
+                createdAt: row.created_at ?? '',
+                updatedAt: row.updated_at ?? '',
+            }));
         } catch (error) {
             console.error('Error fetching grade ranges:', error);
             return [];
@@ -108,7 +119,7 @@ export const gradingEngine = {
 
             // Find the matching grade range
             const matchingRange = gradeRanges.find(
-                (range) => totalScore >= range.min_score && totalScore <= range.max_score
+                (range) => totalScore >= range.minScore && totalScore <= range.maxScore
             );
 
             if (!matchingRange) {
@@ -117,8 +128,8 @@ export const gradingEngine = {
             }
 
             return {
-                grade: matchingRange.grade_letter,
-                gradePoint: matchingRange.grade_point,
+                grade: matchingRange.gradeLetter,
+                gradePoint: matchingRange.gradePoint,
                 remark: matchingRange.remark,
             };
         } catch (error) {

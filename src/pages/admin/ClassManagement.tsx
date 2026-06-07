@@ -4,6 +4,12 @@ import { Plus, Search, Users, Edit2, Trash2, DollarSign } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
 import { createClass, getClasses, updateClass, deleteClass } from '@/services/classService';
+import {
+  syncClassTuitionFee,
+  upsertTuitionFeeStructure,
+  getClassTuitionMap,
+  getClassTuitionAmount,
+} from '@/services/classTuitionService';
 
 interface ClassForm {
   name: string;
@@ -61,25 +67,17 @@ export default function ClassManagement() {
     setLoading(true);
     try {
       const classesData = await getClasses(user.schoolId);
-
-      // Fetch fees for each class
-      const classesWithFees = await Promise.all(
-        classesData.map(async (cls: any) => {
-          const { data: feeData } = await supabase
-            .from('fees')
-            .select('amount')
-            .eq('class_id', cls.id)
-            .eq('is_active', true)
-            .maybeSingle();
-
-          return {
-            ...cls,
-            fee: Number(feeData?.amount ?? 0),
-          };
-        })
+      const tuitionMap = await getClassTuitionMap(
+        user.schoolId,
+        classesData.map((cls) => cls.id)
       );
 
-      setClasses(classesWithFees);
+      setClasses(
+        classesData.map((cls) => ({
+          ...cls,
+          fee: tuitionMap.get(cls.id) ?? 0,
+        }))
+      );
     } catch (error) {
       console.error('Error loading classes:', error);
     } finally {
@@ -126,27 +124,17 @@ export default function ClassManagement() {
             .eq('id', classId);
         }
 
-        // Create fee record for this class
-        if (feeAmount > 0 && classId) {
-          const { error: feeError } = await supabase
-            .from('fees')
-            .insert({
-              school_id: user.schoolId,
-              class_id: classId,
-              amount: feeAmount,
-              currency: 'NGN',
-              is_active: true,
-            });
-
-          if (feeError) {
-            console.warn('Warning: Class created but fee could not be saved:', feeError);
-            alert(`Class created, but the fee could not be saved: ${feeError.message}`);
+        // Sync tuition on class card + matching Tuition fee structure for invoices
+        if (classId) {
+          await syncClassTuitionFee(user.schoolId, classId, feeAmount);
+          if (feeAmount > 0) {
+            await upsertTuitionFeeStructure(user.schoolId, classId, feeAmount);
           }
         }
 
         setSuccessMessage(
           feeAmount > 0
-            ? `Class ${className} created with fee NGN ${feeAmount.toLocaleString()}!`
+            ? `Class ${className} created with tuition NGN ${feeAmount.toLocaleString()}!`
             : `Class ${className} created successfully!`
         );
         setShowSuccessModal(true);
@@ -184,46 +172,9 @@ export default function ClassManagement() {
           .update({ is_early_years: isEarlyYearsLevel(editingClass.gradeLevel) })
           .eq('id', editingClass.id);
 
-        // Update or create fee record for this class
-        if (editingClass.fee > 0) {
-          // Check if fee exists
-          const { data: existingFee } = await supabase
-            .from('fees')
-            .select('id')
-            .eq('class_id', editingClass.id)
-            .eq('is_active', true)
-            .single();
-
-          if (existingFee) {
-            // Update existing fee
-            const { error: feeError } = await supabase
-              .from('fees')
-              .update({ amount: editingClass.fee, updated_at: new Date().toISOString() })
-              .eq('id', existingFee.id);
-
-            if (feeError) {
-              console.warn('Warning: Fee not updated:', feeError);
-            } else {
-              console.log('✓ Fee updated for class');
-            }
-          } else {
-            // Create new fee
-            const { error: feeError } = await supabase
-              .from('fees')
-              .insert({
-                school_id: user?.schoolId,
-                class_id: editingClass.id,
-                amount: editingClass.fee,
-                currency: 'NGN',
-                is_active: true,
-              });
-
-            if (feeError) {
-              console.warn('Warning: Fee could not be saved:', feeError);
-            } else {
-              console.log('✓ Fee created for class');
-            }
-          }
+        if (user?.schoolId) {
+          await syncClassTuitionFee(user.schoolId, editingClass.id, editingClass.fee);
+          await upsertTuitionFeeStructure(user.schoolId, editingClass.id, editingClass.fee);
         }
 
         setSuccessMessage('Class updated successfully!');
@@ -267,22 +218,9 @@ export default function ClassManagement() {
   };
 
   const openEditModal = async (cls: any) => {
-    // Fetch fee for this class
-    let classFee = 0;
-    try {
-      const { data: feeData } = await supabase
-        .from('fees')
-        .select('amount')
-        .eq('class_id', cls.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (feeData) {
-        classFee = Number(feeData.amount);
-      }
-    } catch (e) {
-      console.warn('Could not fetch fee for class:', e);
-    }
+    const classFee = user?.schoolId
+      ? await getClassTuitionAmount(user.schoolId, cls.id)
+      : 0;
 
     setEditingClass({
       id: cls.id,
@@ -324,6 +262,9 @@ export default function ClassManagement() {
           />
         </div>
 
+        {loading && classes.length === 0 ? (
+          <div className="text-center py-12 text-secondary-text">Loading classes…</div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredClasses.map((cls, index) => (
             <motion.div
@@ -361,7 +302,7 @@ export default function ClassManagement() {
                 </div>
                 <div className="flex items-center gap-2 pt-2 border-t border-border dark:border-gray-800">
                   <DollarSign className={`w-4 h-4 ${cls.fee > 0 ? 'text-green-600 dark:text-green-400' : 'text-secondary-text'}`} />
-                  <span className="text-sm text-secondary-text">Fee:</span>
+                  <span className="text-sm text-secondary-text">Tuition:</span>
                   <span className={`font-medium ${cls.fee > 0 ? 'text-green-600 dark:text-green-400' : 'text-secondary-text'}`}>
                     {cls.fee > 0 ? `NGN ${cls.fee.toLocaleString()}` : 'Not set'}
                   </span>
@@ -370,8 +311,9 @@ export default function ClassManagement() {
             </motion.div>
           ))}
         </div>
+        )}
 
-        {filteredClasses.length === 0 && (
+        {!loading && filteredClasses.length === 0 && (
           <div className="text-center py-12">
             <Users className="w-12 h-12 text-secondary-text mx-auto mb-4 opacity-50" />
             <h3 className="text-lg font-semibold mb-2">No classes found</h3>
@@ -447,7 +389,7 @@ export default function ClassManagement() {
               </div>
 
               <div>
-                <label className="label mb-1.5 block">Class Fee (NGN)</label>
+                <label className="label mb-1.5 block">Tuition (NGN)</label>
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-text" />
                   <input
@@ -537,7 +479,7 @@ export default function ClassManagement() {
               </div>
 
               <div>
-                <label className="label mb-1.5 block">Class Fee (NGN)</label>
+                <label className="label mb-1.5 block">Tuition (NGN)</label>
                 <div className="relative">
                   <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-text" />
                   <input

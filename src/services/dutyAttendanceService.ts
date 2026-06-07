@@ -136,6 +136,22 @@ export const dutyAttendanceService = {
     return (data ?? []) as DutyRoster[];
   },
 
+  async isStaffOnDuty(
+    schoolId: string,
+    staffId: string,
+    weekStart?: string
+  ): Promise<boolean> {
+    const start = weekStart ?? mondayOf(new Date().toISOString().slice(0, 10));
+    const { data } = await supabase
+      .from('duty_rosters')
+      .select('id')
+      .eq('school_id', schoolId)
+      .eq('staff_id', staffId)
+      .eq('week_start', start)
+      .maybeSingle();
+    return !!data;
+  },
+
   async getAttendanceForDate(schoolId: string, date: string): Promise<DutyAttendanceRow[]> {
     const { data } = await supabase
       .from('duty_attendance')

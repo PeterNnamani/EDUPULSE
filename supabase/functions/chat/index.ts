@@ -6,22 +6,79 @@ const groq = new Groq({
   apiKey: Deno.env.get("GROQ_API_KEY"),
 });
 
-const BASE_CAPABILITIES = `EduPulse helps schools intervene early — not only by flagging struggling students, but through counselor workflows, behaviour tracking, parent notifications, and continuous risk-based monitoring.
+const BASE_CAPABILITIES = `You are **EduPulse Assistant** — a capable AI like ChatGPT, embedded in EduPulse (Nigeria-focused school ERP). You help with **everything**: school data, education, curriculum, lesson planning, general knowledge, writing, explanations, and real-life questions.
 
-You can help users with:
-- School activities and assignments (including drafting lesson note outlines)
-- Questions about THEIR account data (classes, students, attendance, risk flags, interventions)
-- Practical next steps inside EduPulse
+## Two modes (use both naturally)
 
-RULES:
-- Use ONLY facts from ACCOUNT DATA for numbers, names, dates, and lists.
-- NEVER invent student names, teacher names, class names, grade levels, or counts. No placeholders like "Ms. Thompson" or made-up totals.
-- If ACCOUNT DATA lacks the answer, reply exactly: "I don't have that in your school records yet. Check the relevant page in EduPulse or ask again after data is recorded."
-- Do not say you are "checking" or "accessing" systems — the data is already provided above.
-- Keep answers concise, warm, and professional.
-- Address the user by name when natural.`;
+**A) School-aware mode** — When ACCOUNT DATA contains facts (student names, staff counts, attendance, fees, class lists), use ONLY that data. Never invent school records.
+
+**B) General AI mode** — For curriculum timetables, schemes of work, lesson content, subject topics, exam prep, explanations, coding, writing, advice, and any general question: answer fully using your knowledge like ChatGPT. Do NOT refuse or say "I don't have that in records" for these — generate helpful, accurate content.
+
+## Nigerian curriculum timetables & schemes (IMPORTANT)
+
+When users ask for a subject timetable by class and term (e.g. "General Maths SS1 2nd term timetable", "JSS2 English 1st term scheme"):
+
+1. **Interpret "timetable"** as a **term scheme of work / weekly topic timetable** unless they clearly want a bell-period school schedule.
+2. Produce a **complete, practical table** with:
+   - Week number (typically 10–13 weeks per term)
+   - Topic / sub-topic
+   - Brief learning focus
+   - Suggested period allocation (optional)
+3. Base content on **Nigerian NERDC / WAEC / NECO** standards for the stated class and subject.
+4. Label clearly if generated: *"Based on standard Nigerian SS1 General Mathematics curriculum (2nd term). Adjust to your school's scheme if needed."*
+5. For **SS1 General Mathematics 2nd term**, typical topics include: further algebra, simultaneous equations, quadratic equations, variation, logical reasoning, mensuration extensions, etc. — be thorough and week-by-week.
+
+If ACCOUNT DATA has matching subjects/classes, mention alignment; if not, still deliver the full scheme.
+
+## Lesson notes
+Structure: Topic, Class, Duration, Objectives, Previous Knowledge, Materials, Presentation, Evaluation, Homework, Reference. Nigerian classroom style.
+
+## EduPulse app help
+Explain modules when asked (Attendance, Grades, Fees, Interventions, etc.) using platformGuide in ACCOUNT DATA when present.
+
+## Style
+- Helpful, thorough, ChatGPT-quality — not overly brief unless user wants short.
+- Use markdown: **headings**, tables, bullet lists.
+- Address user by name when natural.
+- For factual school data you lack, say what's missing and still help with general/educational content.`;
+
+function intentHint(intent: ChatIntent | undefined, userMessage: string): string {
+  const q = userMessage.toLowerCase();
+  switch (intent) {
+    case "lesson_note":
+      return "Draft a complete LESSON NOTE / LESSON PLAN. Be thorough.";
+    case "timetable":
+      if (/ss|jss|general maths|mathematics|term|scheme|syllabus|weekly/.test(q)) {
+        return "Generate a FULL term scheme of work / weekly topic timetable for the requested Nigerian class, subject, and term. Use a markdown table. Do NOT refuse — this is general curriculum content, not school DB lookup.";
+      }
+      return "If school period timetable: use teachingLoad from ACCOUNT DATA. If subject/term scheme: generate full weekly topics table.";
+    case "curriculum":
+      return "Explain curriculum topics, syllabus, or schemes for the requested level/subject. Generate complete content; supplement with ACCOUNT DATA if available.";
+    case "fees":
+      return "Use ACCOUNT DATA for fee amounts. Explain Monnify/parent payment for general fee questions.";
+    case "platform_help":
+      return "Explain EduPulse features clearly.";
+    default:
+      return "Answer like ChatGPT — fully, accurately, and helpfully. Use ACCOUNT DATA only for specific school record facts (names, counts, dates).";
+  }
+}
+
+function tokensForIntent(intent: ChatIntent | undefined, userMessage: string): number {
+  const q = userMessage.toLowerCase();
+  if (intent === "lesson_note") return 2500;
+  if (intent === "timetable" && /ss|jss|term|maths|scheme/.test(q)) return 2800;
+  if (intent === "curriculum") return 2000;
+  if (intent === "general") return 1800;
+  return 1200;
+}
+
+function modelForIntent(intent: ChatIntent | undefined): string {
+  if (intent === "platform_help") return "llama-3.1-8b-instant";
+  return "llama-3.3-70b-versatile";
+}
 
 type StaffRole = "admin" | "principal" | "teacher" | "counselor" | "finance" | "bursar";
+type ChatIntent = "lesson_note" | "timetable" | "curriculum" | "fees" | "platform_help" | "general";
 
 interface ChatRequestBody {
   userMessage?: string;
@@ -32,6 +89,8 @@ interface ChatRequestBody {
   staffId?: string;
   children?: Array<{ id: string; firstName: string; lastName: string; className?: string }>;
   conversationHistory?: Array<{ role: string; content: string }>;
+  accountContext?: Record<string, unknown>;
+  intent?: ChatIntent;
 }
 
 async function validateCaller(
@@ -80,113 +139,6 @@ async function validateCaller(
   return { ok: true, staffDbId: staffRow.id, userName: staffRow.full_name };
 }
 
-async function fetchSchoolOverview(supabase: SupabaseClient, schoolId: string) {
-  const [
-    { count: studentCount },
-    { data: staffRows },
-    { data: classRows },
-    { count: interventionCount },
-    { count: assignmentCount },
-  ] = await Promise.all([
-    supabase
-      .from("students")
-      .select("id", { count: "exact", head: true })
-      .eq("school_id", schoolId)
-      .eq("status", "active"),
-    supabase
-      .from("staff")
-      .select("full_name, role")
-      .eq("school_id", schoolId)
-      .eq("is_active", true)
-      .order("full_name")
-      .limit(40),
-    supabase
-      .from("classes")
-      .select("name")
-      .eq("school_id", schoolId)
-      .eq("is_active", true)
-      .order("name")
-      .limit(30),
-    supabase
-      .from("intervention_cases")
-      .select("id", { count: "exact", head: true })
-      .eq("school_id", schoolId)
-      .in("status", ["open", "in_progress", "on_hold"]),
-    supabase
-      .from("assignments")
-      .select("id", { count: "exact", head: true })
-      .eq("school_id", schoolId)
-      .eq("status", "active"),
-  ]);
-
-  const staffByRole: Record<string, number> = {};
-  for (const s of staffRows ?? []) {
-    const role = s.role ?? "staff";
-    staffByRole[role] = (staffByRole[role] ?? 0) + 1;
-  }
-
-  return {
-    activeStudents: studentCount ?? 0,
-    activeStaff: (staffRows ?? []).length,
-    activeClasses: (classRows ?? []).length,
-    staffByRole,
-    staff: (staffRows ?? []).map((s) => ({ name: s.full_name, role: s.role })),
-    classes: (classRows ?? []).map((c) => c.name),
-    openInterventionCases: interventionCount ?? 0,
-    activeAssignments: assignmentCount ?? 0,
-  };
-}
-
-async function buildServerAccountContext(
-  supabase: SupabaseClient,
-  params: {
-    schoolId: string;
-    userRole: string;
-    userName: string;
-    staffDbId?: string;
-    children?: ChatRequestBody["children"];
-  }
-) {
-  const overview = await fetchSchoolOverview(supabase, params.schoolId);
-  const base = {
-    userName: params.userName,
-    role: params.userRole,
-    schoolId: params.schoolId,
-    generatedAt: new Date().toISOString(),
-    platform: {
-      earlyIntervention:
-        "EduPulse supports early intervention through risk-based monitoring, counselor workflows, behaviour tracking, and automated parent notifications.",
-    },
-    data: { schoolOverview: overview } as Record<string, unknown>,
-  };
-
-  if (params.userRole === "parent" && params.children?.length) {
-    base.data.children = params.children.slice(0, 5).map((c) => ({
-      name: `${c.firstName} ${c.lastName}`.trim(),
-      class: c.className ?? "—",
-    }));
-  }
-
-  if (params.staffDbId && params.userRole === "teacher") {
-    const { data: classSubjects } = await supabase
-      .from("class_subjects")
-      .select("classes(name)")
-      .eq("school_id", params.schoolId)
-      .eq("teacher_id", params.staffDbId)
-      .limit(15);
-
-    const classNames = [
-      ...new Set(
-        (classSubjects ?? [])
-          .map((row) => (row.classes as { name?: string } | null)?.name)
-          .filter(Boolean)
-      ),
-    ];
-    base.data.teacherClasses = classNames;
-  }
-
-  return base;
-}
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -210,9 +162,9 @@ Deno.serve(async (req: Request) => {
       userName = "there",
       schoolId,
       userId,
-      staffId,
-      children,
       conversationHistory = [],
+      accountContext,
+      intent,
     } = body;
 
     if (!userMessage?.trim()) {
@@ -241,51 +193,61 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(req, { error: identity.error }, 403);
     }
 
-    const accountData = await buildServerAccountContext(supabase, {
-      schoolId,
-      userRole,
-      userName: identity.userName ?? userName,
-      staffDbId: staffId ?? identity.staffDbId,
-      children,
-    });
+    const resolvedName = identity.userName ?? userName;
+    const accountData =
+      accountContext &&
+      typeof accountContext === "object" &&
+      accountContext.schoolId === schoolId
+        ? accountContext
+        : {
+            userName: resolvedName,
+            role: userRole,
+            schoolId,
+            generatedAt: new Date().toISOString(),
+            data: {},
+          };
 
     const roleHints: Record<string, string> = {
-      admin: "Focus on school operations, subscriptions, staff, and oversight.",
-      teacher: "Focus on classes, attendance, grades, assignments, lesson notes, and students needing attention.",
-      principal: "Focus on leadership, risk oversight, interventions, and school-wide trends.",
-      counselor: "Focus on intervention cases, student wellbeing, and follow-up actions.",
-      finance: "Focus on fees, payments, and financial records.",
-      parent: "Focus on their children's attendance, behaviour, and school updates.",
+      admin: "User is school admin — operations, staff, subscriptions, configuration.",
+      teacher: "User is a teacher — classes, lesson notes, attendance, grades, assignments.",
+      principal: "User is principal — school-wide oversight, risk, interventions, leadership.",
+      counselor: "User is counselor — intervention cases, student wellbeing, follow-ups.",
+      finance: "User handles finance — fees, payments, Monnify virtual accounts, reconciliation.",
+      parent: "User is a parent — their children's attendance, grades, fees, behaviour updates.",
     };
 
-    const systemPrompt = `You are the EduPulse Assistant speaking with ${accountData.userName} (${userRole}).
+    const systemPrompt = `You are the EduPulse Assistant speaking with ${resolvedName} (${userRole}).
 
 ${BASE_CAPABILITIES}
 
 Role focus: ${roleHints[userRole] || roleHints.teacher}
 
-ACCOUNT DATA (live from database — treat as source of truth):
+Task hint: ${intentHint(intent, userMessage.trim())}
+
+ACCOUNT DATA (live from EduPulse — source of truth for school facts):
 ${JSON.stringify(accountData, null, 2)}`;
 
     const historyMessages = conversationHistory
       .filter((m) => m.content && (m.role === "user" || m.role === "assistant"))
-      .slice(-8)
+      .slice(-10)
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
+    const model = modelForIntent(intent);
+
     const completion = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model,
       messages: [
         { role: "system", content: systemPrompt },
         ...historyMessages,
         { role: "user", content: userMessage.trim() },
       ],
-      temperature: 0.5,
-      max_tokens: 700,
+      temperature: intent === "lesson_note" || intent === "timetable" || intent === "general" ? 0.7 : 0.55,
+      max_tokens: tokensForIntent(intent, userMessage.trim()),
     });
 
     const message = completion.choices[0].message.content || "";
 
-    return jsonResponse(req, { message, model: "llama-3.1-8b-instant" });
+    return jsonResponse(req, { message, model, intent: intent ?? "general" });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Chat Error:", errorMessage);

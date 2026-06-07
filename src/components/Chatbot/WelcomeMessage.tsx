@@ -1,71 +1,59 @@
 import { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/store';
+import EdubotAvatar from './EdubotAvatar';
+import { EDUBOT_NAME } from '@/services/chatConversationsStorage';
 
-const VISIBLE_MS = 3000;
+const VISIBLE_MS = 3500;
 
 interface WelcomeMessageProps {
-    isVisible: boolean;
-    onDismiss: () => void;
+  isVisible: boolean;
+  onDismiss: () => void;
 }
 
 export default function WelcomeMessage({ isVisible, onDismiss }: WelcomeMessageProps) {
-    const { user } = useAppStore();
-    const onDismissRef = useRef(onDismiss);
-    onDismissRef.current = onDismiss;
+  const { user } = useAppStore();
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
 
-    const displayName = (user?.fullName || user?.name || 'there').trim();
+  const displayName = (user?.fullName || user?.name || 'there').trim();
+  const firstName = displayName.split(/\s+/)[0] || displayName;
 
-    const messages: Record<string, string> = {
-        admin: `Hello, ${displayName}! I'm your EduPulse Assistant. I can help with school operations and answer questions about your account data — students, staff, subscriptions, and more.`,
-        teacher: `Hello, ${displayName}! I'm your EduPulse Assistant. I can help with your classes, school activities, lesson notes, and answer questions about your account — attendance, assignments, and students who may need attention.`,
-        principal: `Hello, ${displayName}! I support early intervention oversight — risk monitoring, counselor workflows, behaviour trends, and school-wide data in your account.`,
-        counselor: `Hello, ${displayName}! I help with intervention cases, student support workflows, and account data so you can act before issues escalate.`,
-        finance: `Hello, ${displayName}! I can help with fees, payments, and questions about financial data in your account.`,
-        parent: `Hello, ${displayName}! I can help you follow your child's attendance, grades, assignments, and behaviour updates from your account.`,
-    };
+  const messages: Record<string, string> = {
+    admin: `Hi ${firstName} — ${EDUBOT_NAME} can help with school operations, staff, fees, and curriculum.`,
+    teacher: `Hi ${firstName} — ask ${EDUBOT_NAME} for lesson notes, timetables, classes, and teaching help.`,
+    principal: `Hi ${firstName} — ${EDUBOT_NAME} supports school-wide data, risk, and interventions.`,
+    counselor: `Hi ${firstName} — ${EDUBOT_NAME} helps with cases, at-risk students, and support workflows.`,
+    finance: `Hi ${firstName} — ask ${EDUBOT_NAME} about fees, payments, and virtual accounts.`,
+    parent: `Hi ${firstName} — ${EDUBOT_NAME} can help with attendance, grades, fees, and assignments.`,
+  };
 
-    const message = user?.role ? messages[user.role] || messages.teacher : messages.teacher;
+  const message = user?.role ? messages[user.role] || messages.teacher : messages.teacher;
 
-    useEffect(() => {
-        if (!isVisible) return;
+  useEffect(() => {
+    if (!isVisible) return;
+    const dismissTimer = setTimeout(() => onDismissRef.current(), VISIBLE_MS);
+    return () => clearTimeout(dismissTimer);
+  }, [isVisible, message]);
 
-        const dismissTimer = setTimeout(() => {
-            onDismissRef.current();
-        }, VISIBLE_MS);
-
-        return () => clearTimeout(dismissTimer);
-    }, [isVisible, message]);
-
-    return (
-        <AnimatePresence>
-            {isVisible && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 20 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                    className="fixed bottom-28 right-6 z-40"
-                >
-                    <motion.div
-                        className="max-w-sm bg-white dark:bg-dark-card rounded-2xl rounded-br-none shadow-xl dark:shadow-dark-elevated p-4 border border-border dark:border-dark-border"
-                        initial={{ scale: 0.95 }}
-                        animate={{ scale: 1 }}
-                    >
-                        <p className="text-gray-800 dark:text-dark-text text-sm leading-relaxed">
-                            {message}
-                        </p>
-                    </motion.div>
-
-                    {/* Arrow/Pointer */}
-                    <motion.div
-                        className="absolute bottom-0 right-6 w-0 h-0 border-l-8 border-r-0 border-t-8 border-l-transparent border-t-white dark:border-t-dark-bg"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.3 }}
-                    />
-                </motion.div>
-            )}
-        </AnimatePresence>
-    );
+  return (
+    <AnimatePresence>
+      {isVisible && (
+        <motion.div
+          initial={{ opacity: 0, y: 16, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12, scale: 0.96 }}
+          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+          className="fixed bottom-[5.75rem] right-6 z-40 max-w-[17rem]"
+        >
+          <div className="rounded-2xl rounded-br-sm border border-neutral-200 bg-white p-4 shadow-[0_12px_40px_-8px_rgba(0,0,0,0.15)] dark:border-neutral-800 dark:bg-neutral-950 dark:shadow-[0_12px_40px_-8px_rgba(0,0,0,0.5)]">
+            <div className="mb-2.5">
+              <EdubotAvatar size="sm" showOnline />
+            </div>
+            <p className="text-[13px] leading-relaxed text-neutral-700 dark:text-neutral-300">{message}</p>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 }

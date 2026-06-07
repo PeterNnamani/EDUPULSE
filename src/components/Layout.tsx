@@ -31,6 +31,7 @@ import { ChatBot, WelcomeMessage } from '@/components/Chatbot';
 import NotificationBell from '@/components/NotificationBell';
 import { InAppNotificationProvider } from '@/contexts/InAppNotificationContext';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import { useDutyAssignment } from '@/hooks/useDutyAssignment';
 import { type FeatureKey } from '@/config/planFeatures';
 
 const adminNavItems = [
@@ -133,8 +134,13 @@ export default function Layout() {
   const [chatOpen, setChatOpen] = useState(false);
 
   const { hasFeature, loading: featuresLoading } = useFeatureAccess();
+  const { showDutyFeatures, loading: dutyLoading } = useDutyAssignment();
   const allNavItems = user ? roleNavMap[user.role] || [] : [];
   const navItems = allNavItems.filter((item) => {
+    if (item.path === '/duty-attendance') {
+      if (dutyLoading) return true;
+      if (!showDutyFeatures) return false;
+    }
     const feature = NAV_FEATURE_MAP[item.path];
     if (!feature) return true;
     // While plan is loading, keep items visible to avoid flicker/hiding.

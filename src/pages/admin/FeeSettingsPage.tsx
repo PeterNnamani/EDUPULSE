@@ -4,6 +4,12 @@ import { Plus, Edit2, Trash2, DollarSign, AlertCircle, Loader, Users } from 'luc
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store';
 import { feeAssignmentService } from '@/services/feeAssignmentService';
+import {
+  isTuitionFeeTypeId,
+  isTuitionFeeTypeName,
+  syncClassTuitionFee,
+  refreshClassTuitionFromStructures,
+} from '@/services/classTuitionService';
 
 interface FeeStructureRow {
     id: string;
@@ -68,7 +74,12 @@ export default function FeeSettingsPage() {
             setSessionId(session?.id ?? null);
 
             const [{ data: cls }, { data: ft }] = await Promise.all([
-                supabase.from('classes').select('id, name').eq('school_id', schoolId).order('name'),
+                supabase
+                    .from('classes')
+                    .select('id, name')
+                    .eq('school_id', schoolId)
+                    .eq('is_active', true)
+                    .order('name'),
                 supabase.from('fee_types').select('id, name').eq('school_id', schoolId).order('name'),
             ]);
             const classesData = cls ?? [];
@@ -200,6 +211,13 @@ export default function FeeSettingsPage() {
                 });
             }
 
+            const isTuition = isTuitionFeeTypeId(formData.feeTypeId, feeTypes);
+            if (schoolId && isTuition) {
+                for (const classId of formData.classIds) {
+                    await syncClassTuitionFee(schoolId, classId, Number(formData.amount));
+                }
+            }
+
             await fetchData();
             handleCloseModal();
             setTimeout(() => setSuccess(''), 3000);
@@ -213,12 +231,18 @@ export default function FeeSettingsPage() {
 
     const handleDelete = async (id: string) => {
         if (!confirm('Delete this fee structure?')) return;
+        const row = structures.find((s) => s.id === id);
         try {
             const { error: delErr } = await supabase
                 .from('fee_structures')
                 .update({ is_active: false })
                 .eq('id', id);
             if (delErr) throw delErr;
+
+            if (schoolId && row && isTuitionFeeTypeName(row.fee_type_name)) {
+                await refreshClassTuitionFromStructures(schoolId, row.class_id);
+            }
+
             setSuccess('Fee structure removed');
             await fetchData();
             setTimeout(() => setSuccess(''), 3000);
@@ -278,7 +302,7 @@ export default function FeeSettingsPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold">Fee Structures</h1>
-                    <p className="text-secondary-text">Configure multiple fees per class (Tuition, PTA, Transport...)</p>
+                    <p className="text-secondary-text">Configure fees per class — Tuition syncs to the Classes page; other fees stay here only.</p>
                 </div>
                 <div className="flex gap-2">
                     <button
@@ -335,11 +359,21 @@ export default function FeeSettingsPage() {
                                         <td className="px-4 py-3 text-right font-semibold">NGN {row.amount.toLocaleString()}</td>
                                         <td className="px-4 py-3 text-sm text-secondary-text">{row.description || '-'}</td>
                                         <td className="px-4 py-3 flex gap-2">
-                                            <button onClick={() => handleOpenModal(row)} className="p-2 hover:bg-secondary-bg rounded-lg transition-colors" title="Edit">
-                                                <Edit2 className="w-4 h-4" />
+                                            <button
+                                                type="button"
+                                                onClick={() => handleOpenModal(row)}
+                                                className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1"
+                                            >
+                                                <Edit2 className="w-3.5 h-3.5" />
+                                                Edit
                                             </button>
-                                            <button onClick={() => handleDelete(row.id)} className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors text-red-600" title="Delete">
-                                                <Trash2 className="w-4 h-4" />
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDelete(row.id)}
+                                                className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                                Delete
                                             </button>
                                         </td>
                                     </tr>
@@ -412,11 +446,21 @@ export default function FeeSettingsPage() {
                                     onChange={(e) => setFormData({ ...formData, feeTypeId: e.target.value })}
                                     className="input-field"
                                 >
-                                    <option value="">General</option>
-                                    {feeTypes.map((t) => (
+                                    <option value="">Other fee (not tuition)</option>
+                                    {feeTypes
+                                        .filter((t) => !isTuitionFeeTypeName(t.name))
+                                        .map((t) => (
                                         <option key={t.id} value={t.id}>{t.name}</option>
                                     ))}
+                                    {feeTypes
+                                        .filter((t) => isTuitionFeeTypeName(t.name))
+                                        .map((t) => (
+                                        <option key={t.id} value={t.id}>{t.name} (updates class tuition)</option>
+                                    ))}
                                 </select>
+                                <p className="text-xs text-secondary-text mt-1">
+                                    Choose <strong>Tuition</strong> to update the amount shown on each class card.
+                                </p>
                             </div>
                             <div>
                                 <label className="label mb-1.5 block">Amount (NGN) *</label>

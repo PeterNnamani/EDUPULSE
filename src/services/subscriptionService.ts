@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { notificationTriggerService } from './notificationTriggerService';
+import { withTimeout } from '@/utils/withTimeout';
 import {
   normalizePlan,
   getPlanDefinition,
@@ -106,46 +107,63 @@ export function buildActivePaidPlanSlots(subs: SubscriptionRow[] | null | undefi
 /** Mark individual subscriptions past end_date as expired; keep others active. */
 export async function expireEndedSubscriptions(schoolId: string): Promise<void> {
   const now = new Date();
-  const { data: activeSubs } = await supabase
+  const { data: activeSubs, error: activeSubsError } = await supabase
     .from('subscriptions')
     .select('id, end_date')
     .eq('school_id', schoolId)
     .eq('status', 'active');
+
+  if (activeSubsError) {
+    console.error('[subscription] Failed to load active subscriptions:', activeSubsError);
+    return;
+  }
 
   const endedIds = (activeSubs ?? [])
     .filter((sub) => endOfDay(sub.end_date) < now)
     .map((sub) => sub.id);
 
   if (endedIds.length > 0) {
-    await supabase
+    const { error: expireError } = await supabase
       .from('subscriptions')
       .update({ status: 'expired', updated_at: now.toISOString() })
       .in('id', endedIds);
+
+    if (expireError) {
+      console.error('[subscription] Failed to expire subscriptions:', expireError);
+      return;
+    }
   }
 
-  const { data: stillActive } = await supabase
+  const { data: stillActive, error: stillActiveError } = await supabase
     .from('subscriptions')
-    .select('id, end_date, status')
+    .select('id, plan, end_date, status')
     .eq('school_id', schoolId)
     .eq('status', 'active');
 
-  const hasCurrent = filterCurrentSubscriptions(stillActive).length > 0;
+  if (stillActiveError) {
+    console.error('[subscription] Failed to reload active subscriptions:', stillActiveError);
+    return;
+  }
 
-  if (!hasCurrent) {
-    await supabase
-      .from('schools')
-      .update({ subscription_status: 'expired', updated_at: now.toISOString() })
-      .eq('id', schoolId);
-  } else {
-    await supabase
-      .from('schools')
-      .update({ subscription_status: 'active', updated_at: now.toISOString() })
-      .eq('id', schoolId);
+  const hasCurrent = filterCurrentSubscriptions(stillActive).length > 0;
+  const nextStatus = hasCurrent ? 'active' : 'expired';
+
+  const { error: schoolUpdateError } = await supabase
+    .from('schools')
+    .update({ subscription_status: nextStatus, updated_at: now.toISOString() })
+    .eq('id', schoolId);
+
+  if (schoolUpdateError) {
+    console.error('[subscription] Failed to update school subscription status:', schoolUpdateError);
   }
 }
 
 export async function getSchoolSubscriptionStatus(schoolId: string): Promise<SchoolSubscriptionStatus> {
-  await expireEndedSubscriptions(schoolId);
+  try {
+    await withTimeout(expireEndedSubscriptions(schoolId), 12_000, 'Subscription check timed out');
+  } catch (error) {
+    console.warn('[subscription] Skipping expiry sync:', error);
+  }
 
   const { data: school } = await supabase
     .from('schools')

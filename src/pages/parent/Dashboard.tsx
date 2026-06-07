@@ -61,7 +61,7 @@ export default function ParentDashboard() {
   // Refs for request deduplication and cleanup
   const pendingRequestRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
-  const fetchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Set default selected child from store or initialize from first child
   useEffect(() => {

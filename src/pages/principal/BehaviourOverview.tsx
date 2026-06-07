@@ -1,8 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, Loader2, Search } from 'lucide-react';
-import { useAppStore } from '@/store';
-import { supabase } from '@/lib/supabase';
+import { unwrapJoin, safeFullName } from '@/utils/displayUtils';
 
 interface BehaviourRow {
   id: string;
@@ -47,27 +46,20 @@ export default function PrincipalBehaviourOverview() {
         if (error) throw error;
 
         setRows(
-          (data ?? []).map((r: {
-            id: string;
-            behaviour_type: string;
-            category: string | null;
-            description: string;
-            points: number;
-            date: string;
-            students?: { first_name: string; last_name: string };
-            classes?: { name: string };
-          }) => ({
-            id: r.id,
-            studentName: r.students
-              ? `${r.students.first_name} ${r.students.last_name}`
-              : 'Unknown',
-            className: r.classes?.name ?? '—',
-            behaviour_type: r.behaviour_type,
-            category: r.category,
-            description: r.description,
-            points: r.points ?? 0,
-            date: r.date,
-          }))
+          (data ?? []).map((r) => {
+            const student = unwrapJoin(r.students as { first_name: string; last_name: string } | { first_name: string; last_name: string }[] | null);
+            const cls = unwrapJoin(r.classes as { name: string } | { name: string }[] | null);
+            return {
+              id: r.id,
+              studentName: student ? safeFullName(student.first_name, student.last_name) : 'Unknown',
+              className: cls?.name ?? '—',
+              behaviour_type: r.behaviour_type,
+              category: r.category,
+              description: r.description,
+              points: r.points ?? 0,
+              date: r.date,
+            };
+          })
         );
       } catch (e) {
         console.error('[Principal] Behaviour load failed:', e);

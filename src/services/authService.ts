@@ -2,6 +2,15 @@ import { supabase } from '@/lib/supabase';
 import { getChildrenByParentPhone } from './studentService';
 import { normalizePhone, extractParentPhones } from '@/utils/phoneUtils';
 import { generateStaffId, getNextStaffSequence } from '@/utils/schoolIdUtils';
+import { withTimeout, TimeoutError } from '@/utils/withTimeout';
+
+const LOGIN_TIMEOUT_MS = 20_000;
+const LOGIN_TIMEOUT_MESSAGE =
+    'Sign-in timed out. Check your internet connection and try again.';
+
+function loginTimeout<T>(promise: PromiseLike<T>): Promise<T> {
+    return withTimeout(promise, LOGIN_TIMEOUT_MS, LOGIN_TIMEOUT_MESSAGE);
+}
 
 interface AdminLoginResponse {
     success: boolean;
@@ -48,6 +57,21 @@ interface StaffLoginResponse {
  */
 export async function adminLogin(email: string, password: string): Promise<AdminLoginResponse> {
     try {
+        return await loginTimeout(adminLoginInternal(email, password));
+    } catch (error) {
+        if (error instanceof TimeoutError) {
+            return { success: false, error: error.message };
+        }
+        console.error('Admin login error:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Login failed',
+        };
+    }
+}
+
+async function adminLoginInternal(email: string, password: string): Promise<AdminLoginResponse> {
+    try {
         // Step 1: Authenticate with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
             email,
@@ -71,7 +95,7 @@ export async function adminLogin(email: string, password: string): Promise<Admin
         // Step 2: Verify user exists in staff table with role='admin'
         const { data: staffData, error: staffError } = await supabase
             .from('staff')
-            .select('id, staff_id, full_name, email, phone, school_id, photo_url, role')
+            .select('id, staff_id, full_name, email, phone, school_id, photo_url, role, user_id')
             .eq('email', email)
             .eq('role', 'admin')
             .eq('is_active', true)
@@ -79,6 +103,7 @@ export async function adminLogin(email: string, password: string): Promise<Admin
 
         if (staffError) {
             console.error('Staff lookup error:', staffError);
+            await supabase.auth.signOut();
             return {
                 success: false,
                 error: 'Failed to verify admin credentials',
@@ -86,7 +111,6 @@ export async function adminLogin(email: string, password: string): Promise<Admin
         }
 
         if (!staffData) {
-            // User authenticated but not found in staff table as admin
             await supabase.auth.signOut();
             return {
                 success: false,
@@ -94,11 +118,23 @@ export async function adminLogin(email: string, password: string): Promise<Admin
             };
         }
 
-        // Step 3: Success - return admin user data
+        // Link auth user in background — never block sign-in on this write
+        if (!staffData.user_id || staffData.user_id !== authData.user.id) {
+            void supabase
+                .from('staff')
+                .update({ user_id: authData.user.id, updated_at: new Date().toISOString() })
+                .eq('id', staffData.id)
+                .then(({ error: linkError }) => {
+                    if (linkError) {
+                        console.warn('[adminLogin] Could not link staff.user_id:', linkError.message);
+                    }
+                });
+        }
+
         return {
             success: true,
             user: {
-                id: authData.user.id,
+                id: staffData.id,
                 email: staffData.email || email,
                 staffId: staffData.staff_id,
                 fullName: staffData.full_name,
@@ -126,11 +162,30 @@ export async function staffLogin(
     role: string
 ): Promise<StaffLoginResponse> {
     try {
+        return await loginTimeout(staffLoginInternal(staffId, pin, role));
+    } catch (error) {
+        if (error instanceof TimeoutError) {
+            return { success: false, error: error.message };
+        }
+        console.error('Staff login error:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Login failed',
+        };
+    }
+}
+
+async function staffLoginInternal(
+    staffId: string,
+    pin: string,
+    role: string
+): Promise<StaffLoginResponse> {
+    try {
         const { data: staffData, error: staffError } = await supabase
             .from('staff')
             .select('id, staff_id, full_name, phone, school_id, role, photo_url, is_active')
-            .eq('staff_id', staffId)
-            .eq('pin', pin)
+            .eq('staff_id', staffId.trim())
+            .eq('pin', pin.trim())
             .eq('role', role)
             .eq('is_active', true)
             .maybeSingle();
@@ -149,6 +204,11 @@ export async function staffLogin(
                 error: 'Invalid Staff ID or PIN',
             };
         }
+
+        void supabase
+            .from('staff')
+            .update({ last_login_at: new Date().toISOString() })
+            .eq('id', staffData.id);
 
         return {
             success: true,
@@ -177,6 +237,21 @@ export async function staffLogin(
  * Handles phone normalization for flexible matching
  */
 export async function parentLogin(phone: string) {
+    try {
+        return await loginTimeout(parentLoginInternal(phone));
+    } catch (error) {
+        if (error instanceof TimeoutError) {
+            return { success: false, error: error.message };
+        }
+        console.error('[PARENT_LOGIN] Parent login error:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Login failed',
+        };
+    }
+}
+
+async function parentLoginInternal(phone: string) {
     try {
         // Normalize the input phone
         const normalizedPhone = normalizePhone(phone);

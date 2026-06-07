@@ -1,19 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-label="EduPulse">
-  <defs>
-    <linearGradient id="bg" x1="30" y1="15" x2="150" y2="165" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#3B82F6"/>
-      <stop offset="1" stop-color="#1D4ED8"/>
-    </linearGradient>
-    <linearGradient id="board" x1="90" y1="40" x2="90" y2="78" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#DBEAFE"/>
-    </linearGradient>
-  </defs>
-  <rect width="180" height="180" rx="40" fill="url(#bg)"/>
-  <path fill="url(#board)" d="M90 38 38 68 90 98 142 68 90 38Z"/>
-  <path fill="#BFDBFE" d="M90 68 142 68 90 98 38 68 90 68Z" opacity="0.45"/>
-  <path fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" d="M56 94c0 18 15 31 34 31s34-13 34-31"/>
-  <path stroke="#FBBF24" stroke-width="7" stroke-linecap="round" d="M134 69v33"/>
-  <circle cx="134" cy="110" r="8" fill="#FBBF24"/>
-  <circle cx="134" cy="65" r="6.5" fill="#FBBF24"/>
+  <style>
+    .pulse {
+      fill: none;
+      stroke: #0a0a0a;
+      stroke-width: 14;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    @media (prefers-color-scheme: dark) {
+      .pulse { stroke: #fafafa; }
+    }
+  </style>
+  <path class="pulse" d="M12 90h30l12-40L102 124l15-52L135 90h33" />
 </svg>

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Eye, EyeOff, ArrowRight, ArrowLeft, User, Lock, Phone } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { adminLogin, staffLogin, parentLogin } from '@/services/authService';
 import type { UserRole } from '@/types';
+import { dashboardPathForRole } from '@/config/routeAccess';
 import { unlockNotificationAudio } from '@/utils/playNotificationSound';
 import { getInitialsFromName } from '@/utils/displayUtils';
 import {
@@ -17,6 +19,7 @@ import {
 type LoginView = 'welcome' | 'credentials' | 'full';
 
 export default function Login() {
+  const navigate = useNavigate();
   const selectedRole = useAppStore((s) => s.selectedRole);
   const setUser = useAppStore((s) => s.setUser);
   const setSelectedRole = useAppStore((s) => s.setSelectedRole);
@@ -94,94 +97,122 @@ export default function Login() {
   };
 
   const completeLogin = async () => {
+    if (loading) return;
+
     setError('');
     setLoading(true);
     unlockNotificationAudio();
 
+    const finish = (loggedInUser?: { role: UserRole }) => {
+      setLoading(false);
+      if (loggedInUser) {
+        navigate(dashboardPathForRole(loggedInUser.role), { replace: true });
+      }
+    };
+
     try {
       if (selectedRole === 'admin') {
-        const response = await adminLogin(form.email, form.password);
+        if (!form.email.trim() || !form.password) {
+          setError('Enter your email and password.');
+          setLoading(false);
+          return;
+        }
 
-        if (!response.success) {
+        const response = await adminLogin(form.email.trim(), form.password);
+
+        if (!response.success || !response.user) {
           setError(response.error || 'Login failed');
           setLoading(false);
           return;
         }
 
-        if (response.user) {
-          persistRemembered('admin', response.user.fullName, response.user.photoUrl);
-          setUser({
-            id: response.user.id,
-            email: response.user.email,
-            role: 'admin',
-            schoolId: response.user.schoolId,
-            staffId: response.user.staffId,
-            fullName: response.user.fullName,
-            phone: response.user.phone,
-            photoUrl: response.user.photoUrl,
-          });
+        persistRemembered('admin', response.user.fullName, response.user.photoUrl);
+        setUser({
+          id: response.user.id,
+          email: response.user.email,
+          role: 'admin',
+          schoolId: response.user.schoolId,
+          staffId: response.user.staffId,
+          fullName: response.user.fullName,
+          phone: response.user.phone,
+          photoUrl: response.user.photoUrl,
+        });
+        finish({ role: 'admin' });
+        return;
+      }
+
+      if (selectedRole === 'parent') {
+        if (!form.phone.trim()) {
+          setError('Enter your phone number.');
+          setLoading(false);
+          return;
         }
-      } else if (selectedRole === 'parent') {
+
         const response = await parentLogin(form.phone);
 
-        if (!response.success) {
+        if (!response.success || !response.user) {
           setError(response.error || 'Login failed');
           setLoading(false);
           return;
         }
 
-        if (response.user) {
-          persistRemembered('parent', response.user.fullName);
-          setUser({
-            id: response.user.id,
-            role: 'parent',
-            schoolId: response.user.schoolId,
-            fullName: response.user.fullName,
-            phone: response.user.phone,
-            children: response.user.children,
-          });
-        }
-      } else {
-        const response = await staffLogin(form.staffId, form.pin, selectedRole);
-
-        if (!response.success) {
-          setError(response.error || 'Login failed');
-          setLoading(false);
-          return;
-        }
-
-        if (response.user) {
-          persistRemembered(
-            selectedRole as UserRole,
-            response.user.fullName,
-            response.user.photoUrl
-          );
-          setUser({
-            id: response.user.id,
-            role: selectedRole as UserRole,
-            schoolId: response.user.schoolId,
-            staffId: response.user.staffId,
-            fullName: response.user.fullName,
-            phone: response.user.phone,
-            photoUrl: response.user.photoUrl,
-          });
-
-          if (selectedRole === 'teacher' && response.user.schoolId) {
-            const { teacherActivityService } = await import('@/services/teacherActivityService');
-            void teacherActivityService.logActivity({
-              schoolId: response.user.schoolId,
-              staffId: response.user.id,
-              staffName: response.user.fullName,
-              action: 'login',
-              details: { at: new Date().toISOString() },
-            });
-          }
-        }
+        persistRemembered('parent', response.user.fullName);
+        setUser({
+          id: response.user.id,
+          role: 'parent',
+          schoolId: response.user.schoolId,
+          fullName: response.user.fullName,
+          phone: response.user.phone,
+          children: response.user.children,
+        });
+        finish({ role: 'parent' });
+        return;
       }
+
+      if (!form.staffId.trim() || !form.pin.trim()) {
+        setError('Enter your staff ID and PIN.');
+        setLoading(false);
+        return;
+      }
+
+      const response = await staffLogin(form.staffId, form.pin, selectedRole);
+
+      if (!response.success || !response.user) {
+        setError(response.error || 'Login failed');
+        setLoading(false);
+        return;
+      }
+
+      persistRemembered(
+        selectedRole as UserRole,
+        response.user.fullName,
+        response.user.photoUrl
+      );
+      setUser({
+        id: response.user.id,
+        role: selectedRole as UserRole,
+        schoolId: response.user.schoolId,
+        staffId: response.user.staffId,
+        fullName: response.user.fullName,
+        phone: response.user.phone,
+        photoUrl: response.user.photoUrl,
+      });
+
+      if (selectedRole === 'teacher' && response.user.schoolId) {
+        const { teacherActivityService } = await import('@/services/teacherActivityService');
+        void teacherActivityService.logActivity({
+          schoolId: response.user.schoolId,
+          staffId: response.user.id,
+          staffName: response.user.fullName,
+          action: 'login',
+          details: { at: new Date().toISOString() },
+        });
+      }
+
+      finish({ role: selectedRole as UserRole });
     } catch (err) {
       console.error('Login error:', err);
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
@@ -192,10 +223,18 @@ export default function Login() {
   };
 
   const handleWelcomeSignIn = async () => {
-    if (selectedRole === 'parent' && form.phone) {
+    if (loading) return;
+
+    if (selectedRole === 'parent') {
+      if (!form.phone.trim()) {
+        setView('full');
+        setError('Enter your phone number to continue.');
+        return;
+      }
       await completeLogin();
       return;
     }
+
     setView('credentials');
     setError('');
   };
@@ -407,8 +446,9 @@ export default function Login() {
         </button>
 
         {loading && (
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-2">
             <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm text-secondary-text">Signing in…</p>
           </div>
         )}
 
@@ -484,7 +524,10 @@ export default function Login() {
             className="btn-primary w-full flex items-center justify-center gap-2"
           >
             {loading ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Signing in…
+              </>
             ) : (
               <>
                 Sign in
@@ -568,7 +611,10 @@ export default function Login() {
           className="btn-primary w-full flex items-center justify-center gap-2"
         >
           {loading ? (
-            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            <>
+              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Signing in…
+            </>
           ) : (
             <>
               Sign In

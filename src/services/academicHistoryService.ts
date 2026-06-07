@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { unwrapJoin } from '@/utils/displayUtils';
 
 /**
  * Academic History Service
@@ -213,11 +214,22 @@ export const academicHistoryService = {
             if (error) throw error;
 
             // Transform to show progression
-            const progression = data?.map(record => ({
-                session: record.academic_sessions?.name,
-                class: `${record.classes?.grade_level}${record.classes?.section || ''}`,
-                status: record.promotion_status
-            })) || [];
+            const progression = data?.map((record) => {
+                const session = unwrapJoin(
+                    record.academic_sessions as { name?: string } | { name?: string }[] | null
+                );
+                const cls = unwrapJoin(
+                    record.classes as
+                        | { grade_level?: string; section?: string | null }
+                        | { grade_level?: string; section?: string | null }[]
+                        | null
+                );
+                return {
+                    session: session?.name,
+                    class: cls ? `${cls.grade_level ?? ''}${cls.section ?? ''}` : '',
+                    status: record.promotion_status,
+                };
+            }) || [];
 
             return { progression, error: null };
         } catch (error) {

@@ -2,8 +2,11 @@ import { supabase } from '@/lib/supabase';
 import {
   buildChatAccountContext,
   answerFromAccountContext,
+  detectChatIntent,
   type ChatAccountContext,
+  type ChatIntent,
 } from '@/services/chatContextService';
+import { invokeGroqDirect } from '@/services/groqChatFallback';
 import type { UserRole } from '@/types';
 
 interface ChatContext {
@@ -20,6 +23,7 @@ interface ChatResponse {
   message: string;
   context?: Record<string, unknown>;
   shouldRefresh?: boolean;
+  intent?: ChatIntent;
 }
 
 export async function sendChatMessage(
@@ -38,10 +42,12 @@ export async function sendChatMessage(
       children: context.children,
     });
 
+    const intent = detectChatIntent(userMessage);
+
     const factualAnswer = answerFromAccountContext(userMessage, accountContext);
     if (factualAnswer) {
       await logChatMessage(userMessage, factualAnswer, context.userId);
-      return { message: factualAnswer, context: { source: 'database' } };
+      return { message: factualAnswer, context: { source: 'database' }, intent };
     }
 
     const { data, error } = await supabase.functions.invoke('chat', {
@@ -53,7 +59,9 @@ export async function sendChatMessage(
         userId: context.userId,
         staffId: context.staffId,
         children: context.children,
-        conversationHistory: context.conversationHistory?.slice(-8) ?? [],
+        conversationHistory: context.conversationHistory?.slice(-10) ?? [],
+        accountContext,
+        intent,
       },
     });
 
@@ -66,11 +74,28 @@ export async function sendChatMessage(
     return {
       message,
       context: { model: data?.model ?? 'groq' },
+      intent,
     };
   } catch (error) {
     console.error('Error in sendChatMessage:', error);
 
     if (accountContext) {
+      try {
+        const intent = detectChatIntent(userMessage);
+        const direct = await invokeGroqDirect({
+          userMessage,
+          userRole: context.userRole,
+          userName: context.userName,
+          intent,
+          accountContext,
+          conversationHistory: context.conversationHistory,
+        });
+        await logChatMessage(userMessage, direct.message, context.userId);
+        return { message: direct.message, context: { model: direct.model }, intent };
+      } catch (directError) {
+        console.error('Groq direct fallback failed:', directError);
+      }
+
       const local = answerFromAccountContext(userMessage, accountContext);
       if (local) {
         await logChatMessage(userMessage, local, context.userId);
@@ -80,7 +105,7 @@ export async function sendChatMessage(
 
     return {
       message:
-        'I could not reach the assistant service right now. I can answer factual questions from your school data — staff, students, classes, attendance, assignments, interventions, and risk flags.',
+        'I could not reach the assistant service right now. I can still help with curriculum, timetable, attendance, staff, students, classes, fees, assignments, interventions, lesson note drafts, and EduPulse navigation — try a specific question.',
     };
   }
 }
