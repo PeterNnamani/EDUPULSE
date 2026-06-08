@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, Loader2, Search } from 'lucide-react';
+import { useAppStore } from '@/store';
+import { supabase } from '@/lib/supabase';
 import { unwrapJoin, safeFullName } from '@/utils/displayUtils';
 
 interface BehaviourRow {
