@@ -466,3 +466,29 @@
     display: none;
   }
 }
+
+/*
+ * Paystack Inline checkout — modal over the app, not a blank full-page takeover.
+ * v1/v2 inject overlays on <body>; keep EduPulse visible underneath.
+ */
+body.paystack-checkout-open {
+  overflow: auto !important;
+}
+
+body.paystack-checkout-open #root {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+}
+
+body.paystack-checkout-open iframe[src*='paystack'],
+body.paystack-checkout-open iframe[src*='checkout.paystack'] {
+  z-index: 2147483647 !important;
+}
+
+/* v1 inline backdrop */
+body.paystack-checkout-open #paystack-checkout-background,
+body.paystack-checkout-open .paystack-checkout-background {
+  background: rgba(0, 0, 0, 0.55) !important;
+  z-index: 2147483646 !important;
+}

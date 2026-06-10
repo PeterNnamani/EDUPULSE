@@ -60,6 +60,9 @@ export const useAppStore = create<AppState>()(
       logout: () => set((state) => {
         const u = state.user;
         clearStoredAppPath();
+        void import('@/hooks/useFeatureAccess').then(({ clearFeatureAccessCache }) => {
+          clearFeatureAccessCache();
+        });
         if (u?.role === 'teacher' && u.schoolId) {
           void import('@/services/teacherActivityService').then(({ teacherActivityService }) => {
             void teacherActivityService.logActivity({

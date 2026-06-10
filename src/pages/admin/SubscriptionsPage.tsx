@@ -21,18 +21,15 @@ import {
 } from '@/config/planFeatures';
 import { refreshFeatureAccess } from '@/hooks/useFeatureAccess';
 import { useAppStore } from '@/store';
+import {
+  getPaystackPublicKey,
+  getPaystackKeyMode,
+  paystackModeLabel,
+} from '@/config/paystackConfig';
+import { loadPaystackInline, openPaystackCheckout } from '@/lib/paystackCheckout';
+import PaystackPageOverlay from '@/components/PaystackPageOverlay';
 
 type BillingChoice = 'monthly' | 'annual';
-
-const PAYSTACK_PUBLIC_KEY = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
-
-declare global {
-  interface Window {
-    PaystackPop?: {
-      setup: (options: Record<string, unknown>) => { openIframe: () => void };
-    };
-  }
-}
 
 const plans = PLAN_ORDER.map((id) => PLAN_DEFINITIONS[id]);
 
@@ -71,28 +68,30 @@ function buildPlanPayload(plan: PlanDefinition, cycle: BillingChoice): Subscript
 
 export default function SubscriptionsPage() {
   const { user } = useAppStore();
+  const paystackPublicKey = getPaystackPublicKey();
+  const paystackKeyMode = getPaystackKeyMode(paystackPublicKey);
   const [processing, setProcessing] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [billingHistory, setBillingHistory] = useState<any[]>([]);
   const [subscriptionStatus, setSubscriptionStatus] = useState<SchoolSubscriptionStatus | null>(null);
   const [paystackReady, setPaystackReady] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [billingChoice, setBillingChoice] = useState<BillingChoice>('monthly');
   const paymentCompletedRef = useRef(false);
 
   useEffect(() => {
-    if (window.PaystackPop) {
-      setPaystackReady(true);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://js.paystack.co/v1/inline.js';
-    script.async = true;
-    script.onload = () => setPaystackReady(true);
-    script.onerror = () => setError('Could not load Paystack. Check your internet connection.');
-    document.body.appendChild(script);
+    let active = true;
+    void loadPaystackInline()
+      .then(() => {
+        if (active) setPaystackReady(true);
+      })
+      .catch(() => {
+        if (active) setError('Could not load Paystack. Check your internet connection.');
+      });
     return () => {
-      if (script.parentNode) script.parentNode.removeChild(script);
+      active = false;
+      document.body.classList.remove('paystack-checkout-open');
     };
   }, []);
 
@@ -161,14 +160,25 @@ export default function SubscriptionsPage() {
       return;
     }
 
-    if (!paystackReady || !window.PaystackPop) {
+    if (!paystackReady) {
       setError('Paystack is still loading. Wait a moment and try again.');
       return;
     }
 
-    if (!PAYSTACK_PUBLIC_KEY) {
+    if (!paystackPublicKey) {
       setError('Add VITE_PAYSTACK_PUBLIC_KEY to your .env file to enable subscription payments.');
       return;
+    }
+
+    if (paystackKeyMode === 'invalid') {
+      setError('VITE_PAYSTACK_PUBLIC_KEY must start with pk_live_ or pk_test_.');
+      return;
+    }
+
+    if (import.meta.env.DEV && paystackKeyMode === 'test') {
+      console.warn(
+        '[PAYSTACK] Test public key loaded — checkout will show the Paystack sandbox. Use pk_live_ in .env for live payments, then restart npm run dev.'
+      );
     }
 
     if (!import.meta.env.VITE_SUPABASE_URL) {
@@ -195,22 +205,23 @@ export default function SubscriptionsPage() {
     try {
       const reference = `EDU-${user.schoolId.slice(0, 8)}-${plan.id}-${Date.now()}`;
 
-      const handler = window.PaystackPop.setup({
-        key: PAYSTACK_PUBLIC_KEY,
+      setCheckoutOpen(true);
+
+      openPaystackCheckout({
+        key: paystackPublicKey,
         email: payerEmail,
         amount: priceFor(plan, billingChoice) * 100,
         currency: 'NGN',
-        ref: reference,
+        reference,
         metadata: {
           school_id: user.schoolId,
           plan: plan.id,
           billing_cycle: billingChoice,
         },
-        // Paystack Inline uses `callback` (not onSuccess) for successful payments
-        callback: (response: { reference: string }) => {
+        onSuccess: (response) => {
+          setCheckoutOpen(false);
           void (async () => {
             try {
-              console.log('[PAYSTACK] Payment successful:', response.reference);
               await completePayment(response.reference, plan, payerEmail);
             } catch (err) {
               const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -224,29 +235,42 @@ export default function SubscriptionsPage() {
             }
           })();
         },
-        onClose: () => {
+        onCancel: () => {
+          setCheckoutOpen(false);
           if (!paymentCompletedRef.current) {
             resetProcessing();
             setError('Payment window closed. No charge was recorded.');
           }
         },
       });
-
-      handler.openIframe();
     } catch (err) {
+      setCheckoutOpen(false);
       resetProcessing();
       setError(err instanceof Error ? err.message : 'Could not open Paystack checkout.');
     }
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 relative">
+      <PaystackPageOverlay open={checkoutOpen} />
       <div className="text-center">
         <h1 className="text-3xl font-bold mb-2">Subscription Plans</h1>
         <p className="text-secondary-text">Choose the right plan for your school</p>
         {!paystackReady && (
           <p className="text-xs text-secondary-text mt-2">Loading payment gateway…</p>
         )}
+        <p
+          className={`text-xs mt-2 font-medium ${
+            paystackKeyMode === 'live'
+              ? 'text-green-700 dark:text-green-400'
+              : paystackKeyMode === 'test'
+                ? 'text-amber-700 dark:text-amber-400'
+                : 'text-secondary-text'
+          }`}
+        >
+          Paystack: {paystackModeLabel(paystackKeyMode)}
+          {paystackKeyMode === 'test' && ' — replace pk_test_ with pk_live_ in .env and restart the dev server'}
+        </p>
       </div>
 
       {error && (

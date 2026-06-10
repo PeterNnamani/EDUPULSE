@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Eye, EyeOff, ArrowRight, ArrowLeft, User, Lock, Phone } from 'lucide-react';
 import { useAppStore } from '@/store';
@@ -628,9 +628,9 @@ export default function Login() {
         <div className="mt-6 pt-6 border-t border-border text-center">
           <p className="text-sm text-secondary-text">
             Don&apos;t have an account?{' '}
-            <a href="/register" className="text-black dark:text-white font-medium hover:underline">
+            <Link to="/register" className="text-black dark:text-white font-medium hover:underline">
               Register your school
-            </a>
+            </Link>
           </p>
         </div>
       )}

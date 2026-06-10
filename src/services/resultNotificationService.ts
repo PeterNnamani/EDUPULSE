@@ -33,7 +33,7 @@ export const resultNotificationService = {
             // Get parent details
             const { data: parents } = await supabase
                 .from('parents')
-                .select('user_id, email')
+                .select('id, user_id, email')
                 .in('id', parentIds);
 
             if (!parents) {
@@ -49,7 +49,7 @@ export const resultNotificationService = {
                 user_id: parents.find((p) => p.id === parentId)?.user_id,
                 type: 'report_card_released' as const,
                 title: 'Report Card Available',
-                message: `Your child's ${reportCard.term_id} report card is now available for viewing`,
+                message: `Your child's ${reportCard.termId} report card is now available for viewing`,
                 related_entity_id: reportCard.id,
                 related_entity_type: 'report_card' as const,
                 read: false,
@@ -90,7 +90,7 @@ export const resultNotificationService = {
             const { data: student } = await supabase
                 .from('students')
                 .select('user_id')
-                .eq('id', reportCard.student_id)
+                .eq('id', reportCard.studentId)
                 .single();
 
             if (!student || !student.user_id) {
@@ -104,7 +104,7 @@ export const resultNotificationService = {
                     user_id: student.user_id,
                     type: 'report_card_released',
                     title: 'Your Report Card is Ready',
-                    message: `Your ${reportCard.term_id} report card has been released. You can view it now.`,
+                    message: `Your ${reportCard.termId} report card has been released. You can view it now.`,
                     related_entity_id: reportCard.id,
                     related_entity_type: 'report_card',
                     read: false,

@@ -4,13 +4,15 @@ import { Loader } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { dashboardPathForRole } from '@/config/routeAccess';
 import { useDutyAssignment } from '@/hooks/useDutyAssignment';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 
-/** Blocks duty attendance unless the user manages rosters or is assigned this week. */
+/** Blocks duty attendance unless the plan, roster role, and weekly assignment allow access. */
 export default function DutyRouteGuard({ children }: { children: ReactNode }) {
   const { user } = useAppStore();
+  const { resolved, hasFeature } = useFeatureAccess();
   const { showDutyFeatures, loading } = useDutyAssignment();
 
-  if (loading) {
+  if (!resolved || loading) {
     return (
       <div className="flex items-center justify-center py-24">
         <Loader className="w-8 h-8 animate-spin text-secondary-text" />
@@ -18,7 +20,7 @@ export default function DutyRouteGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!showDutyFeatures) {
+  if (!hasFeature('duty_attendance') || !showDutyFeatures) {
     return <Navigate to={dashboardPathForRole(user?.role)} replace />;
   }
 

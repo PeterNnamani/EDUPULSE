@@ -36,7 +36,9 @@ function splitBlocks(content: string): Array<{ type: 'text'; lines: string[] } |
     if (tableBuffer.length >= 2) {
       blocks.push({ type: 'table', rows: tableBuffer });
     } else {
-      textBuffer.push(...tableBuffer);
+      for (const row of tableBuffer) {
+        textBuffer.push(row.join(' | '));
+      }
     }
     tableBuffer = [];
   };

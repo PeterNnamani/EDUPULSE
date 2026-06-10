@@ -4,6 +4,7 @@ import { UserCheck, Loader, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAppStore } from '@/store';
 import { useDutyAssignment } from '@/hooks/useDutyAssignment';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import { dutyAttendanceService, type DutyRoster } from '@/services/dutyAttendanceService';
 
 interface OnDutyWidgetProps {
@@ -12,6 +13,7 @@ interface OnDutyWidgetProps {
 
 export default function OnDutyWidget({ schoolId }: OnDutyWidgetProps) {
   const { user } = useAppStore();
+  const { hasFeature, resolved: planResolved } = useFeatureAccess();
   const { showDutyFeatures, canManageRoster, loading: dutyCheckLoading } = useDutyAssignment();
   const [roster, setRoster] = useState<DutyRoster[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,7 +31,7 @@ export default function OnDutyWidget({ schoolId }: OnDutyWidgetProps) {
     });
   }, [schoolId, weekStart, canManageRoster]);
 
-  if (dutyCheckLoading) return null;
+  if (!planResolved || !hasFeature('duty_attendance') || dutyCheckLoading) return null;
 
   // Teachers/staff: only show when assigned on duty this week.
   if (!showDutyFeatures) return null;

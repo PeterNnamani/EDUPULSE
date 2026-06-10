@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { positionCalculationService } from './positionCalculationService';
-import type { ResultApproval } from '@/types';
+import type { ResultApprovalRecord } from '@/types';
 
 /**
  * Result Approval Service
@@ -16,7 +16,7 @@ export const resultApprovalService = {
         classId: string,
         sessionId: string,
         termId: string
-    ): Promise<ResultApproval | null> {
+    ): Promise<ResultApprovalRecord | null> {
         try {
             const { data, error } = await supabase
                 .from('result_approvals')
@@ -56,7 +56,7 @@ export const resultApprovalService = {
         classId: string,
         sessionId: string,
         termId: string
-    ): Promise<ResultApproval | null> {
+    ): Promise<ResultApprovalRecord | null> {
         try {
             const { data, error } = await supabase
                 .from('result_approvals')
@@ -101,9 +101,7 @@ export const resultApprovalService = {
                 .eq('class_id', classId)
                 .eq('session_id', sessionId)
                 .eq('term_id', termId)
-                .where(
-                    'ca_score IS NULL OR test_score IS NULL OR exam_score IS NULL'
-                );
+                .or('ca_score.is.null,test_score.is.null,exam_score.is.null');
 
             if (incompleteResults && incompleteResults.length > 0) {
                 return {
@@ -427,9 +425,7 @@ export const resultApprovalService = {
                 .eq('class_id', classId)
                 .eq('session_id', sessionId)
                 .eq('term_id', termId)
-                .where(
-                    'ca_score IS NULL OR test_score IS NULL OR exam_score IS NULL'
-                );
+                .or('ca_score.is.null,test_score.is.null,exam_score.is.null');
 
             if (incompleteResults && incompleteResults.length > 0) {
                 reasons.push(`${incompleteResults.length} results are incomplete`);

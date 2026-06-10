@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { CalendarDays, ClipboardList, AlertTriangle, BookOpen, TrendingUp, ArrowRight, User, Loader } from 'lucide-react';
@@ -46,18 +46,12 @@ interface Assignment {
   submissions?: Array<{ status: string }>;
 }
 
-/** Extra pixels added above the child row height — card grows upward only. */
-const VIRTUAL_CARD_TOP_EXTRA_PX = 72;
-
 export default function ParentDashboard() {
   const { user, selectedParentChildId, setSelectedParentChildId } = useAppStore();
   const navigate = useNavigate();
   const [childStats, setChildStats] = useState<ChildStats>({});
   const [recentAssignments, setRecentAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const childRowRef = useRef<HTMLDivElement>(null);
-  const [childRowHeight, setChildRowHeight] = useState<number | undefined>();
-
   // Refs for request deduplication and cleanup
   const pendingRequestRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
@@ -296,25 +290,6 @@ export default function ParentDashboard() {
   const selectedChild = user?.children?.find((c: Child) => c.id === selectedParentChildId);
   const hasMultipleChildren = (user?.children?.length ?? 0) > 1;
 
-  useLayoutEffect(() => {
-    const el = childRowRef.current;
-    if (!el) return;
-
-    const measure = () => {
-      setChildRowHeight(el.getBoundingClientRect().height);
-    };
-
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(el);
-    window.addEventListener('resize', measure);
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, [selectedParentChildId, hasMultipleChildren, user?.children?.length]);
-
   const stats = childStats[selectedParentChildId || ''] || {
     attendance: { present: 0, absent: 0, late: 0, percentage: 0 },
     averageGrade: 0,
@@ -364,52 +339,40 @@ export default function ParentDashboard() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="card card-hero overflow-hidden"
+        className="card card-hero"
       >
-        <div className="space-y-5">
-          <div>
-            <h1 className="text-2xl lg:text-3xl font-bold mb-2">Welcome, {user?.fullName}</h1>
-            <p className="text-gray-300 dark:text-gray-600 text-sm lg:text-base max-w-xl">
-              {hasMultipleChildren
-                ? `${user?.children?.length} children linked — select a child to view their dashboard.`
-                : selectedChildClassName
-                  ? `Monitor ${selectedChild?.firstName}'s progress in ${selectedChildClassName}.`
-                  : `Monitor ${selectedChild?.firstName}'s academic progress.`}
-            </p>
-          </div>
-
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4 lg:gap-6">
-            <div ref={childRowRef} className="flex-1 min-w-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-3 lg:gap-4 items-start">
+          <div className="min-w-0">
+            <div>
+              <h1 className="text-2xl lg:text-3xl font-bold mb-1.5">Welcome, {user?.fullName}</h1>
+              <p className="text-gray-300 dark:text-gray-600 text-sm lg:text-base max-w-xl">
+                {hasMultipleChildren
+                  ? `${user?.children?.length} children linked — select a child to view their dashboard.`
+                  : selectedChildClassName
+                    ? `Monitor ${selectedChild?.firstName}'s progress in ${selectedChildClassName}.`
+                    : `Monitor ${selectedChild?.firstName}'s academic progress.`}
+              </p>
+            </div>
+            <div className="mt-5">
               <ParentChildSelector variant="hero" bare className="!mt-0" />
             </div>
+          </div>
 
-            {user?.schoolId && selectedParentChildId && (
-              <div
-                className="w-full lg:w-[400px] shrink-0 lg:h-[var(--card-h)]"
-                style={
-                  childRowHeight
-                    ? ({
-                        '--child-row-h': `${childRowHeight}px`,
-                        '--card-h': `${childRowHeight + VIRTUAL_CARD_TOP_EXTRA_PX}px`,
-                      } as React.CSSProperties)
+          {user?.schoolId && selectedParentChildId && (
+            <div className="w-full lg:w-[340px] shrink-0 lg:justify-self-end">
+              <VirtualAccountCard
+                embedded
+                schoolId={user.schoolId}
+                studentId={selectedParentChildId}
+                classId={selectedChild?.classId}
+                studentName={
+                  selectedChild
+                    ? `${selectedChild.firstName} ${selectedChild.lastName}`
                     : undefined
                 }
-              >
-                <VirtualAccountCard
-                  embedded
-                  className="h-full"
-                  schoolId={user.schoolId}
-                  studentId={selectedParentChildId}
-                  classId={selectedChild?.classId}
-                  studentName={
-                    selectedChild
-                      ? `${selectedChild.firstName} ${selectedChild.lastName}`
-                      : undefined
-                  }
-                />
-              </div>
-            )}
-          </div>
+              />
+            </div>
+          )}
         </div>
       </motion.div>
 

@@ -3,7 +3,7 @@ import { AlertTriangle, Users, Calendar, MessageSquare, CheckCircle, Clock, User
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/store';
-import { interventionService } from '@/services/interventionService';
+import { interventionService, type InterventionStatus } from '@/services/interventionService';
 import { supabase } from '@/lib/supabase';
 import { formatDate } from '@/utils/displayUtils';
 
@@ -15,8 +15,8 @@ interface CaseWithStudent {
   type: string;
   daysOpen: number;
   lastContact: string;
-  status: string;
-  priority: string;
+  status: InterventionStatus;
+  priority: 'low' | 'medium' | 'high' | 'critical';
   createdAt: string;
 }
 
@@ -124,7 +124,7 @@ export default function CounselorDashboard() {
       );
 
       // Filter out null values
-      const validCases = casesWithStudents.filter((c): c is CaseWithStudent => c !== null);
+      const validCases = casesWithStudents.filter((c): c is NonNullable<typeof c> => c !== null);
       setOpenCases(validCases);
 
       // School-wide risk distribution (students table, same as risk engine)

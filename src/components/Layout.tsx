@@ -24,6 +24,7 @@ import {
   UserCheck,
   Wallet,
   MessageSquare,
+  Loader2,
 } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { useState, useEffect } from 'react';
@@ -45,6 +46,7 @@ const adminNavItems = [
   { label: 'Fee Structures', path: '/admin/fee-settings', icon: DollarSign },
   { label: 'Academic calendar', path: '/admin/academic-calendar', icon: CalendarDays },
   { label: 'Promotion', path: '/admin/academic-lifecycle', icon: GraduationCap },
+  { label: 'Report Cards', path: '/admin/report-cards', icon: FileText },
   { label: 'Duty Attendance', path: '/duty-attendance', icon: UserCheck },
   { label: 'Teacher Activity', path: '/admin/teacher-activity', icon: Activity },
   { label: 'Audit Logs', path: '/admin/audit-logs', icon: ShieldCheck },
@@ -94,6 +96,7 @@ const parentNavItems = [
   { label: 'Attendance', path: '/parent/attendance', icon: CalendarDays },
   { label: 'Grades', path: '/parent/grades', icon: ClipboardList },
   { label: 'Assignments', path: '/parent/assignments', icon: BookOpen },
+  { label: 'Behaviour', path: '/parent/behaviour', icon: AlertTriangle },
 ];
 
 const MESSAGING_ROLES = new Set(['admin', 'teacher', 'parent', 'principal']);
@@ -147,24 +150,30 @@ export default function Layout() {
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
-  const { hasFeature, loading: featuresLoading } = useFeatureAccess();
+  const { hasFeature, resolved: planResolved } = useFeatureAccess();
   const { showDutyFeatures, loading: dutyLoading } = useDutyAssignment();
   const allNavItems = user ? roleNavMap[user.role] || [] : [];
   const navItems = allNavItems.filter((item) => {
+    if (!planResolved) {
+      const feature = NAV_FEATURE_MAP[item.path];
+      if (feature) return false;
+      if (item.path === '/duty-attendance') return false;
+    }
     if (item.path === '/duty-attendance') {
-      if (dutyLoading) return true;
+      if (dutyLoading) return false;
       if (!showDutyFeatures) return false;
+      return hasFeature('duty_attendance');
     }
     const feature = NAV_FEATURE_MAP[item.path];
     if (!feature) return true;
-    // While plan is loading, keep items visible to avoid flicker/hiding.
-    return featuresLoading || hasFeature(feature);
+    return hasFeature(feature);
   });
   const showMessagesNav =
     !!user &&
     MESSAGING_ROLES.has(user.role) &&
-    (featuresLoading || hasFeature('school_messaging'));
-  const messagingEnabled = !featuresLoading && hasFeature('school_messaging');
+    planResolved &&
+    hasFeature('school_messaging');
+  const messagingEnabled = planResolved && hasFeature('school_messaging');
   const [messageUnreadCount, setMessageUnreadCount] = useState(0);
 
   useEffect(() => {
@@ -426,9 +435,15 @@ export default function Layout() {
             </div>
           </header>
 
-          {/* Page Content */}
+          {/* Page Content — wait for plan before rendering gated pages/widgets */}
           <div className="flex-1 overflow-y-auto p-4 lg:p-6">
-            <Outlet />
+            {user?.schoolId && !planResolved ? (
+              <div className="flex items-center justify-center py-24">
+                <Loader2 className="w-7 h-7 animate-spin text-secondary-text" />
+              </div>
+            ) : (
+              <Outlet />
+            )}
           </div>
         </main>
       </div>

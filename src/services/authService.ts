@@ -93,13 +93,52 @@ async function adminLoginInternal(email: string, password: string): Promise<Admi
         }
 
         // Step 2: Verify user exists in staff table with role='admin'
-        const { data: staffData, error: staffError } = await supabase
+        const staffSelect =
+            'id, staff_id, full_name, email, phone, school_id, photo_url, role, user_id';
+        const normalizedEmail = email.trim().toLowerCase();
+
+        let staffData: {
+            id: string;
+            staff_id: string;
+            full_name: string;
+            email: string | null;
+            phone: string;
+            school_id: string;
+            photo_url: string | null;
+            role: string;
+            user_id: string | null;
+        } | null = null;
+        let staffError: { message: string } | null = null;
+
+        const { data: byUserId, error: byUserIdError } = await supabase
             .from('staff')
-            .select('id, staff_id, full_name, email, phone, school_id, photo_url, role, user_id')
-            .eq('email', email)
+            .select(staffSelect)
+            .eq('user_id', authData.user.id)
             .eq('role', 'admin')
             .eq('is_active', true)
             .maybeSingle();
+
+        if (byUserIdError) {
+            staffError = byUserIdError;
+        } else {
+            staffData = byUserId;
+        }
+
+        if (!staffData) {
+            const { data: byEmail, error: byEmailError } = await supabase
+                .from('staff')
+                .select(staffSelect)
+                .ilike('email', normalizedEmail)
+                .eq('role', 'admin')
+                .eq('is_active', true)
+                .maybeSingle();
+
+            if (byEmailError) {
+                staffError = byEmailError;
+            } else {
+                staffData = byEmail;
+            }
+        }
 
         if (staffError) {
             console.error('Staff lookup error:', staffError);
@@ -114,7 +153,8 @@ async function adminLoginInternal(email: string, password: string): Promise<Admi
             await supabase.auth.signOut();
             return {
                 success: false,
-                error: 'User account not found in staff records or is not an admin',
+                error:
+                    'No admin staff record found for this account. Finish school registration or contact support if you already registered.',
             };
         }
 

@@ -36,39 +36,48 @@ DROP POLICY IF EXISTS "Subjects are viewable" ON subjects;
 DROP POLICY IF EXISTS "Payments are viewable" ON payments;
 DROP POLICY IF EXISTS "School settings are viewable by authenticated users" ON school_settings;
 
--- School-scoped SELECT policies
+-- School-scoped SELECT policies (drop first so re-runs are safe)
+DROP POLICY IF EXISTS "Users view students in their school" ON students;
 CREATE POLICY "Users view students in their school"
   ON students FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));
 
+DROP POLICY IF EXISTS "Users view classes in their school" ON classes;
 CREATE POLICY "Users view classes in their school"
   ON classes FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));
 
+DROP POLICY IF EXISTS "Users view staff in their school" ON staff;
 CREATE POLICY "Users view staff in their school"
   ON staff FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));
 
+DROP POLICY IF EXISTS "Users view attendance in their school" ON attendance;
 CREATE POLICY "Users view attendance in their school"
   ON attendance FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));
 
+DROP POLICY IF EXISTS "Users view grades in their school" ON grades;
 CREATE POLICY "Users view grades in their school"
   ON grades FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));
 
+DROP POLICY IF EXISTS "Users view behaviour in their school" ON behaviour_records;
 CREATE POLICY "Users view behaviour in their school"
   ON behaviour_records FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));
 
+DROP POLICY IF EXISTS "Users view subjects in their school" ON subjects;
 CREATE POLICY "Users view subjects in their school"
   ON subjects FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));
 
+DROP POLICY IF EXISTS "Users view payments in their school" ON payments;
 CREATE POLICY "Users view payments in their school"
   ON payments FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));
 
+DROP POLICY IF EXISTS "Users view school settings for their school" ON school_settings;
 CREATE POLICY "Users view school settings for their school"
   ON school_settings FOR SELECT TO authenticated
   USING (school_id IN (SELECT public.user_school_ids()));

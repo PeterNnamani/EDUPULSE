@@ -4,6 +4,9 @@ import { useAppStore } from '@/store';
 
 const STORAGE_KEY = 'edupulse_internal_path';
 
+/** Auth routes keep real URLs so /register and /login work on refresh and when deployed. */
+const PUBLIC_AUTH_PATHS = new Set(['/register', '/login']);
+
 export function clearStoredAppPath() {
   sessionStorage.removeItem(STORAGE_KEY);
 }
@@ -81,6 +84,10 @@ export default function CleanUrlBar() {
 
   useEffect(() => {
     const internalPath = `${location.pathname}${location.search}${location.hash}`;
+    if (PUBLIC_AUTH_PATHS.has(location.pathname)) {
+      persistInternalPath(internalPath);
+      return;
+    }
     persistInternalPath(internalPath);
     maskBrowserUrl(location.pathname, location.search, location.hash);
   }, [location.pathname, location.search, location.hash]);

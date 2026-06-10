@@ -439,6 +439,27 @@ export interface ResultApproval {
   updatedAt: string;
 }
 
+/** Raw row shape from `result_approvals` (Supabase snake_case). */
+export interface ResultApprovalRecord {
+  id: string;
+  school_id: string;
+  class_id: string;
+  session_id: string;
+  term_id: string;
+  current_status: ResultApprovalStatus;
+  submitted_by?: string;
+  approved_by?: string;
+  published_by?: string;
+  class_teacher_comment?: string;
+  principal_comment?: string;
+  rejection_reason?: string;
+  submitted_at?: string;
+  approved_at?: string;
+  published_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ReportCard {
   id: string;
   schoolId: string;

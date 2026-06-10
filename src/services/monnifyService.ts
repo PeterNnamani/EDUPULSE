@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { schoolHasFeature } from '@/services/subscriptionService';
 
 /**
  * MONNIFY SERVICE (client)
@@ -46,6 +47,26 @@ export const monnifyService = {
     config: MonnifyConfig
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      const allowed = await schoolHasFeature(schoolId, 'virtual_accounts');
+      if (!allowed) {
+        return {
+          success: false,
+          error: 'Virtual accounts require the Enterprise plan or higher. Upgrade in Subscriptions.',
+        };
+      }
+
+      if (config.isActive) {
+        const apiKey = config.apiKey.trim();
+        const secretKey = config.secretKey.trim();
+        const contractCode = config.contractCode.trim();
+        if (!apiKey || !secretKey || !contractCode) {
+          return {
+            success: false,
+            error: 'API key, secret key, and contract code are required to enable Monnify.',
+          };
+        }
+      }
+
       const payload = {
         school_id: schoolId,
         provider: 'monnify',
@@ -91,10 +112,18 @@ export const monnifyService = {
     studentId: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      const allowed = await schoolHasFeature(schoolId, 'virtual_accounts');
+      if (!allowed) return { success: false, error: 'Virtual accounts are not on your plan.' };
+
+      const configured = await this.isConfigured(schoolId);
+      if (!configured) return { success: false, error: 'Monnify is not configured.' };
+
       const { data, error } = await supabase.functions.invoke('monnify-webhook', {
         body: { action: 'sync_account_name', schoolId, studentId },
       });
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        return { success: false, error: data?.error || error.message };
+      }
       if (!data?.success) return { success: false, error: data?.error || 'Sync failed' };
       return { success: true };
     } catch (err) {
@@ -114,10 +143,29 @@ export const monnifyService = {
     studentId: string
   ): Promise<{ success: boolean; account?: VirtualAccount; error?: string }> {
     try {
+      const allowed = await schoolHasFeature(schoolId, 'virtual_accounts');
+      if (!allowed) {
+        return {
+          success: false,
+          error: 'Virtual accounts require the Enterprise plan or higher.',
+        };
+      }
+
+      const configured = await this.isConfigured(schoolId);
+      if (!configured) {
+        return {
+          success: false,
+          error: 'Monnify is not configured. Add your API keys in Settings → Payments.',
+        };
+      }
+
       const { data, error } = await supabase.functions.invoke('monnify-webhook', {
         body: { action: 'reserve_account', schoolId, studentId },
       });
       if (error) {
+        if (data?.error) {
+          return { success: false, error: data.error };
+        }
         // FunctionsFetchError ("Failed to send a request to the Edge Function")
         // means the function isn't deployed/reachable yet.
         const msg = error.message || String(error);

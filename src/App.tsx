@@ -81,21 +81,25 @@ function AppContent() {
     </>;
   }
 
-  if (!selectedRole) {
-    return <RoleSelection />;
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/register" element={<SchoolRegistration />} />
+        <Route
+          path="/login"
+          element={selectedRole ? <Login /> : <Navigate to="/" replace />}
+        />
+        <Route
+          path="/"
+          element={selectedRole ? <Navigate to="/login" replace /> : <RoleSelection />}
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    );
   }
 
-  if (!isAuthenticated) {
-    if (selectedRole === 'admin') {
-      return (
-        <Routes>
-          <Route path="/register" element={<SchoolRegistration />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      );
-    }
-    return <Login />;
+  if (!selectedRole) {
+    return <RoleSelection />;
   }
 
   const getDashboardRoute = () => {

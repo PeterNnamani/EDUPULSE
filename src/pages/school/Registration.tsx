@@ -1,16 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Building2, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Building2, ArrowRight, ArrowLeft, Check, ChevronDown } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  SCHOOL_TYPE_OPTIONS,
+  formatSchoolTypesLabel,
+  highestSchoolType,
+  type SchoolType,
+} from '@/config/schoolTypes';
+import { generateStaffId } from '@/utils/schoolIdUtils';
 
 const registerSchema = z.object({
   schoolName: z.string().min(2, 'School name is required'),
-  schoolType: z.enum(['nursery', 'primary', 'secondary', 'tertiary']),
+  schoolTypes: z
+    .array(z.enum(['nursery', 'primary', 'secondary', 'tertiary']))
+    .min(1, 'Select at least one school type'),
   schoolPhone: z.string().min(10, 'Valid phone number is required'),
   schoolEmail: z.string().email('Valid email is required'),
   schoolAddress: z.string().min(5, 'Address is required'),
@@ -40,37 +49,139 @@ export default function SchoolRegistration() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState(1);
+  const [schoolTypeOpen, setSchoolTypeOpen] = useState(false);
+  const schoolTypeRef = useRef<HTMLDivElement>(null);
   const setUser = useAppStore((s) => s.setUser);
   const setSelectedRole = useAppStore((s) => s.setSelectedRole);
   const navigate = useNavigate();
 
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<RegisterForm>({
+  useEffect(() => {
+    setSelectedRole('admin');
+  }, [setSelectedRole]);
+
+  useEffect(() => {
+    const closeOnOutside = (event: MouseEvent) => {
+      if (schoolTypeRef.current && !schoolTypeRef.current.contains(event.target as Node)) {
+        setSchoolTypeOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    return () => document.removeEventListener('mousedown', closeOnOutside);
+  }, []);
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    trigger,
+    formState: { errors },
+  } = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      schoolType: 'secondary',
-    }
+      schoolTypes: [],
+    },
   });
+
+  const selectedSchoolTypes = watch('schoolTypes') ?? [];
+
+  const toggleSchoolType = (type: SchoolType) => {
+    const next = selectedSchoolTypes.includes(type)
+      ? selectedSchoolTypes.filter((t) => t !== type)
+      : [...selectedSchoolTypes, type];
+
+    const ordered = SCHOOL_TYPE_OPTIONS.map((o) => o.value).filter((v) => next.includes(v));
+    setValue('schoolTypes', ordered, { shouldValidate: true });
+  };
+
+  const goToAdminStep = async () => {
+    const valid = await trigger([
+      'schoolName',
+      'schoolTypes',
+      'schoolPhone',
+      'schoolEmail',
+      'schoolAddress',
+      'state',
+      'city',
+    ]);
+    if (valid) setStep(2);
+  };
 
   const onSubmit = async (data: RegisterForm) => {
     setError('');
     setLoading(true);
 
     try {
+      const adminEmail = data.adminEmail.trim();
+      let authUserId: string | undefined;
+
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.adminEmail,
+        email: adminEmail,
         password: data.password,
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        const alreadyExists =
+          authError.message.toLowerCase().includes('already registered') ||
+          authError.message.toLowerCase().includes('already been registered');
+
+        if (!alreadyExists) throw authError;
+
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: adminEmail,
+          password: data.password,
+        });
+
+        if (signInError) throw signInError;
+        authUserId = signInData.user?.id;
+      } else {
+        authUserId = authData.user?.id;
+      }
+
+      if (!authUserId) {
+        throw new Error('Could not create or sign in to your admin account.');
+      }
+
+      const { data: existingStaff } = await supabase
+        .from('staff')
+        .select('id, staff_id, school_id, full_name, phone')
+        .eq('user_id', authUserId)
+        .eq('role', 'admin')
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (existingStaff) {
+        setSelectedRole('admin');
+        setUser({
+          id: authUserId,
+          email: adminEmail,
+          role: 'admin',
+          schoolId: existingStaff.school_id,
+          staffId: existingStaff.staff_id,
+          fullName: existingStaff.full_name,
+          phone: existingStaff.phone,
+        });
+        navigate('/admin');
+        return;
+      }
 
       const trialEndsAt = new Date();
       trialEndsAt.setDate(trialEndsAt.getDate() + 30);
 
-      const { data: school, error: schoolError } = await supabase
+      let school: { id: string };
+
+      const { data: existingSchool } = await supabase
         .from('schools')
-        .insert({
+        .select('id')
+        .eq('email', data.schoolEmail.trim())
+        .maybeSingle();
+
+      if (existingSchool) {
+        school = existingSchool;
+      } else {
+        const schoolRow = {
           name: data.schoolName,
-          school_type: data.schoolType,
+          school_type: highestSchoolType(data.schoolTypes),
           phone: data.schoolPhone,
           email: data.schoolEmail,
           address: data.schoolAddress,
@@ -78,43 +189,98 @@ export default function SchoolRegistration() {
           city: data.city,
           trial_ends_at: trialEndsAt.toISOString(),
           subscription_status: 'trial',
-        })
-        .select()
-        .single();
+        };
 
-      if (schoolError) throw schoolError;
+        let insertResult = await supabase
+          .from('schools')
+          .insert({ ...schoolRow, school_types: data.schoolTypes })
+          .select('id')
+          .single();
 
-      const staffId = `ADM${String(1).padStart(4, '0')}`;
+        if (
+          insertResult.error &&
+          (insertResult.error.code === 'PGRST204' ||
+            insertResult.error.message?.includes('school_types'))
+        ) {
+          insertResult = await supabase.from('schools').insert(schoolRow).select('id').single();
+        }
 
-      const { error: staffError } = await supabase
+        if (insertResult.error) throw insertResult.error;
+        school = insertResult.data!;
+      }
+
+      const { data: existingAdminStaff } = await supabase
         .from('staff')
-        .insert({
+        .select('id, staff_id')
+        .eq('school_id', school.id)
+        .eq('role', 'admin')
+        .ilike('email', adminEmail)
+        .maybeSingle();
+
+      let staffId: string;
+
+      if (existingAdminStaff) {
+        staffId = existingAdminStaff.staff_id;
+        const { error: staffUpdateError } = await supabase
+          .from('staff')
+          .update({
+            user_id: authUserId,
+            full_name: data.adminFullName,
+            phone: data.adminPhone,
+            is_active: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingAdminStaff.id);
+
+        if (staffUpdateError) throw staffUpdateError;
+      } else {
+        staffId = await generateStaffId(school.id, 'admin', 1);
+
+        const { error: staffError } = await supabase.from('staff').insert({
           school_id: school.id,
-          user_id: authData.user?.id,
+          user_id: authUserId,
           staff_id: staffId,
           full_name: data.adminFullName,
-          email: data.adminEmail,
+          email: adminEmail,
           phone: data.adminPhone,
           role: 'admin',
           position: 'Administrator',
+          is_active: true,
         });
 
-      if (staffError) throw staffError;
+        if (staffError) throw staffError;
+      }
 
       const currentYear = new Date().getFullYear();
       const sessionName = `${currentYear}/${currentYear + 1}`;
 
-      const { data: session } = await supabase
+      let session: { id: string } | null = null;
+
+      const { data: existingSession } = await supabase
         .from('academic_sessions')
-        .insert({
-          school_id: school.id,
-          name: sessionName,
-          start_date: `${currentYear}-09-01`,
-          end_date: `${currentYear + 1}-07-31`,
-          is_current: true,
-        })
-        .select()
-        .single();
+        .select('id')
+        .eq('school_id', school.id)
+        .eq('is_current', true)
+        .maybeSingle();
+
+      if (existingSession) {
+        session = existingSession;
+      } else {
+        const { data: newSession, error: sessionError } = await supabase
+          .from('academic_sessions')
+          .insert({
+            school_id: school.id,
+            name: sessionName,
+            start_date: `${currentYear}-09-01`,
+            end_date: `${currentYear + 1}-07-31`,
+            is_current: true,
+          })
+          .select('id')
+          .single();
+
+        if (sessionError) throw sessionError;
+        session = newSession;
+      }
 
       if (session) {
         const terms = [
@@ -138,16 +304,24 @@ export default function SchoolRegistration() {
         }
       }
 
-      await supabase
+      const { data: existingSettings } = await supabase
         .from('school_settings')
-        .insert({
-          school_id: school.id,
-        });
+        .select('id')
+        .eq('school_id', school.id)
+        .maybeSingle();
+
+      if (!existingSettings) {
+        const { error: settingsError } = await supabase
+          .from('school_settings')
+          .insert({ school_id: school.id });
+
+        if (settingsError) throw settingsError;
+      }
 
       setSelectedRole('admin');
       setUser({
-        id: authData.user?.id || '',
-        email: data.adminEmail,
+        id: authUserId,
+        email: adminEmail,
         role: 'admin',
         schoolId: school.id,
         staffId,
@@ -158,7 +332,13 @@ export default function SchoolRegistration() {
       navigate('/admin');
     } catch (err) {
       console.error('Registration error:', err);
-      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+      const message =
+        err instanceof Error
+          ? err.message
+          : typeof err === 'object' && err !== null && 'message' in err
+            ? String((err as { message: unknown }).message)
+            : 'Registration failed. Please try again.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -238,14 +418,75 @@ export default function SchoolRegistration() {
                     )}
                   </div>
 
-                  <div>
+                  <div className="relative" ref={schoolTypeRef}>
                     <label className="label mb-1.5 block">School Type</label>
-                    <select {...register('schoolType')} className="input-field">
-                      <option value="nursery">Nursery</option>
-                      <option value="primary">Primary</option>
-                      <option value="secondary">Secondary</option>
-                      <option value="tertiary">Tertiary</option>
-                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setSchoolTypeOpen((open) => !open)}
+                      className="input-field w-full flex items-center justify-between gap-2 text-left"
+                      aria-expanded={schoolTypeOpen}
+                      aria-haspopup="listbox"
+                    >
+                      <span
+                        className={`truncate ${
+                          selectedSchoolTypes.length === 0 ? 'text-secondary-text' : ''
+                        }`}
+                      >
+                        {formatSchoolTypesLabel(selectedSchoolTypes)}
+                      </span>
+                      <ChevronDown
+                        className={`w-4 h-4 shrink-0 text-secondary-text transition-transform ${
+                          schoolTypeOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                    {schoolTypeOpen && (
+                      <div
+                        role="listbox"
+                        className="absolute z-30 mt-1 w-full rounded-xl border border-border dark:border-dark-border bg-white dark:bg-dark-card shadow-elevated dark:shadow-dark-elevated overflow-hidden"
+                      >
+                        <p className="px-3 py-2 text-[11px] text-secondary-text border-b border-border dark:border-dark-border">
+                          Select all levels offered (lowest to highest)
+                        </p>
+                        <div className="max-h-56 overflow-y-auto py-1">
+                          {SCHOOL_TYPE_OPTIONS.map((option) => {
+                            const checked = selectedSchoolTypes.includes(option.value);
+                            return (
+                              <label
+                                key={option.value}
+                                className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${
+                                  checked
+                                    ? 'bg-secondary-bg dark:bg-dark-elevated'
+                                    : 'hover:bg-secondary-bg/70 dark:hover:bg-dark-elevated/70'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="sr-only"
+                                  checked={checked}
+                                  onChange={() => toggleSchoolType(option.value)}
+                                />
+                                <span
+                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                    checked
+                                      ? 'border-black dark:border-white bg-black dark:bg-white text-white dark:text-black'
+                                      : 'border-border dark:border-dark-border'
+                                  }`}
+                                >
+                                  {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+                                </span>
+                                <span className="min-w-0 text-sm text-black dark:text-white">
+                                  {option.label}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {errors.schoolTypes && (
+                      <p className="text-xs text-red-500 mt-1">{errors.schoolTypes.message}</p>
+                    )}
                   </div>
 
                   <div>
@@ -313,7 +554,7 @@ export default function SchoolRegistration() {
 
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
+                  onClick={() => void goToAdminStep()}
                   className="btn-primary w-full flex items-center justify-center gap-2"
                 >
                   Continue
@@ -425,9 +666,9 @@ export default function SchoolRegistration() {
           <div className="mt-6 pt-6 border-t border-border text-center">
             <p className="text-sm text-secondary-text">
               Already have an account?{' '}
-              <a href="/login" className="text-black dark:text-white font-medium hover:underline">
+              <Link to="/login" className="text-black dark:text-white font-medium hover:underline">
                 Sign in
-              </a>
+              </Link>
             </p>
           </div>
         </div>

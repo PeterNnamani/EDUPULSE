@@ -72,6 +72,19 @@ export interface NotificationPreference {
 // NOTIFICATION SERVICE - Core notification management
 // ============================================================================
 
+/** Postgres UUID columns reject "" — coerce blanks to null / skip optional fields. */
+function uuidOrNull(value?: string | null): string | null | undefined {
+    if (value === undefined) return undefined;
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
+}
+
+function requireUuid(value: string, field: string): string | null {
+    const trimmed = value?.trim();
+    if (!trimmed) return `${field} is required`;
+    return null;
+}
+
 export const notificationService = {
     /**
      * Send a notification to a user
@@ -80,10 +93,17 @@ export const notificationService = {
         request: CreateNotificationRequest
     ): Promise<{ success: boolean; notificationId?: string; error?: string }> {
         try {
+            const schoolId = request.schoolId?.trim();
+            const recipientId = request.recipientId?.trim();
+            const schoolErr = requireUuid(schoolId ?? '', 'schoolId');
+            if (schoolErr) return { success: false, error: schoolErr };
+            const recipientErr = requireUuid(recipientId ?? '', 'recipientId');
+            if (recipientErr) return { success: false, error: recipientErr };
+
             // Get user preferences
             const preferences = await this.getNotificationPreferences(
-                request.schoolId,
-                request.recipientId,
+                schoolId!,
+                recipientId!,
                 request.notificationType
             );
 
@@ -95,24 +115,26 @@ export const notificationService = {
                     preferences.whatsappEnabled && 'whatsapp'
                 ].filter(Boolean)) || ['in_app'];
 
+            const row: Record<string, unknown> = {
+                school_id: schoolId,
+                recipient_id: recipientId,
+                recipient_role: request.recipientRole,
+                notification_type: request.notificationType,
+                title: request.title,
+                message: request.message,
+                priority: request.priority,
+                delivery_channels: deliveryChannels,
+            };
+            if (request.actionUrl?.trim()) row.action_url = request.actionUrl.trim();
+            const relatedStudentId = uuidOrNull(request.relatedStudentId);
+            if (relatedStudentId) row.related_student_id = relatedStudentId;
+            const relatedAlertId = uuidOrNull(request.relatedAlertId);
+            if (relatedAlertId) row.related_alert_id = relatedAlertId;
+
             // Always create in-app notification
             const { data, error } = await supabase
                 .from('notifications')
-                .insert([
-                    {
-                        school_id: request.schoolId,
-                        recipient_id: request.recipientId,
-                        recipient_role: request.recipientRole,
-                        notification_type: request.notificationType,
-                        title: request.title,
-                        message: request.message,
-                        priority: request.priority,
-                        action_url: request.actionUrl,
-                        related_student_id: request.relatedStudentId,
-                        related_alert_id: request.relatedAlertId,
-                        delivery_channels: deliveryChannels
-                    }
-                ])
+                .insert([row])
                 .select('id')
                 .single();
 

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Moon, Sun, Save, Loader2, Eye, Link as LinkIcon } from 'lucide-react';
+import { Moon, Sun, Save, Loader2, Eye, Link as LinkIcon, Lock } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAppStore } from '@/store';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import { getRoleSettingsConfig } from '@/config/roleSettingsConfig';
 import {
   fetchSchoolProfile,
@@ -30,9 +31,17 @@ function ReadOnlyField({ label, value }: { label: string; value: string | number
 
 export default function SettingsPage() {
   const { darkMode, toggleDarkMode, user } = useAppStore();
+  const { hasFeature, resolved: planResolved } = useFeatureAccess();
   const role = user?.role ?? 'admin';
   const config = getRoleSettingsConfig(role);
-  const [activeTab, setActiveTab] = useState(config.tabs[0]?.id ?? 'appearance');
+  const visibleTabs = config.tabs.filter((tab) => {
+    if (tab.id === 'payments') {
+      if (!planResolved) return false;
+      return hasFeature('virtual_accounts');
+    }
+    return true;
+  });
+  const [activeTab, setActiveTab] = useState(visibleTabs[0]?.id ?? config.tabs[0]?.id ?? 'appearance');
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [profile, setProfile] = useState<SchoolProfile | null>(null);
@@ -115,6 +124,14 @@ export default function SettingsPage() {
 
   const notificationItems = getNotificationItemsForRole(role);
 
+  const paymentsTabVisible = planResolved && hasFeature('virtual_accounts');
+
+  useEffect(() => {
+    if (activeTab === 'payments' && !paymentsTabVisible) {
+      setActiveTab(visibleTabs[0]?.id ?? 'appearance');
+    }
+  }, [activeTab, paymentsTabVisible, visibleTabs]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -138,7 +155,7 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="lg:col-span-1">
           <div className="card p-2">
-            {config.tabs.map((tab) => {
+            {visibleTabs.map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
@@ -365,9 +382,10 @@ export default function SettingsPage() {
 }
 
 function MonnifySettings({ schoolId }: { schoolId: string | null }) {
+  const { hasFeature, resolved: planResolved, plan } = useFeatureAccess();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const [form, setForm] = useState({
     apiKey: '',
     secretKey: '',
@@ -376,8 +394,10 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
     isActive: false,
   });
 
+  const canConfigure = planResolved && hasFeature('virtual_accounts');
+
   useEffect(() => {
-    if (!schoolId) {
+    if (!schoolId || !canConfigure) {
       setLoading(false);
       return;
     }
@@ -395,17 +415,49 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
         setLoading(false);
       });
     });
-  }, [schoolId]);
+  }, [schoolId, canConfigure]);
 
   const handleSave = async () => {
-    if (!schoolId) return;
+    if (!schoolId || !canConfigure) return;
     setSaving(true);
     setMsg(null);
     const { monnifyService } = await import('@/services/monnifyService');
     const result = await monnifyService.saveConfig(schoolId, form);
     setSaving(false);
-    setMsg(result.success ? 'Monnify settings saved.' : result.error ?? 'Failed to save.');
+    setMsg(
+      result.success
+        ? { type: 'ok', text: 'Monnify settings saved.' }
+        : { type: 'err', text: result.error ?? 'Failed to save.' }
+    );
   };
+
+  if (!planResolved) {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
+        <div className="flex justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin" />
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (!hasFeature('virtual_accounts')) {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card text-center max-w-lg mx-auto">
+        <div className="w-12 h-12 rounded-full bg-secondary-bg dark:bg-dark-card flex items-center justify-center mx-auto mb-4">
+          <Lock className="w-6 h-6 text-secondary-text" />
+        </div>
+        <h2 className="font-semibold mb-2">Monnify virtual accounts</h2>
+        <p className="text-sm text-secondary-text mb-4">
+          Virtual accounts and automatic fee reconciliation are included on the Enterprise plan.
+          Your school is currently on {plan.name}.
+        </p>
+        <Link to="/admin/subscriptions" className="btn-primary inline-flex items-center gap-2">
+          Upgrade subscription
+        </Link>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
@@ -428,6 +480,7 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
               value={form.apiKey}
               onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
               placeholder="MK_PROD_..."
+              disabled={!canConfigure}
             />
           </div>
           <div>
@@ -439,6 +492,7 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
               onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
               placeholder="••••••••"
               autoComplete="off"
+              disabled={!canConfigure}
             />
           </div>
           <div>
@@ -448,6 +502,7 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
               value={form.contractCode}
               onChange={(e) => setForm({ ...form, contractCode: e.target.value })}
               placeholder="1234567890"
+              disabled={!canConfigure}
             />
           </div>
           <div>
@@ -456,13 +511,14 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
               className="input-field"
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+              disabled={!canConfigure}
             />
           </div>
           <div className="flex items-center justify-between p-4 rounded-xl bg-secondary-bg dark:bg-dark-card">
             <div>
               <p className="font-medium">Enable Monnify</p>
               <p className="text-sm text-secondary-text">
-                Turn on to start generating virtual accounts for new students.
+                Turn on after saving valid API credentials to generate student virtual accounts.
               </p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
@@ -471,8 +527,9 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
                 className="sr-only peer"
                 checked={form.isActive}
                 onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                disabled={!canConfigure}
               />
-              <div className="w-11 h-6 bg-gray-200 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black" />
+              <div className="w-11 h-6 bg-gray-200 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black peer-disabled:opacity-50" />
             </label>
           </div>
           <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-800 dark:text-blue-200">
@@ -480,10 +537,23 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
             <code className="break-all">{`${import.meta.env.VITE_SUPABASE_URL ?? '<SUPABASE_URL>'}/functions/v1/monnify-webhook`}</code>
           </div>
           {msg && (
-            <div className="text-sm text-green-700 dark:text-green-300">{msg}</div>
+            <div
+              className={`text-sm ${
+                msg.type === 'ok'
+                  ? 'text-green-700 dark:text-green-300'
+                  : 'text-red-600 dark:text-red-400'
+              }`}
+            >
+              {msg.text}
+            </div>
           )}
           <div className="flex justify-end">
-            <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !canConfigure}
+              className="btn-primary flex items-center gap-2 disabled:opacity-50"
+            >
               <Save className="w-4 h-4" />
               {saving ? 'Saving…' : 'Save Monnify settings'}
             </button>

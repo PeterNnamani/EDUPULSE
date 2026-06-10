@@ -17,6 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store';
 import { useAcademicCalendar } from '@/hooks';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import BirthdayWidget from '@/components/dashboard/BirthdayWidget';
 import StudentUsageWidget from '@/components/dashboard/StudentUsageWidget';
 import OnDutyWidget from '@/components/dashboard/OnDutyWidget';
@@ -61,6 +62,7 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const { user } = useAppStore();
   const { currentSession, currentTerm, sessionName, termName, isLoading: calendarLoading } = useAcademicCalendar();
+  const { hasFeature } = useFeatureAccess();
   const [schoolId, setSchoolId] = useState<string | null>(null);
   const [currentDateTime, setCurrentDateTime] = useState<Date>(new Date());
   const [academicWeek, setAcademicWeek] = useState<AcademicWeekInfo>({
@@ -178,6 +180,7 @@ export default function AdminDashboard() {
   };
 
   const fetchStats = async () => {
+    if (!schoolId) return;
     try {
       console.log('Fetching stats for schoolId:', schoolId);
 
@@ -660,7 +663,11 @@ export default function AdminDashboard() {
     { label: 'High Risk', value: stats.highRiskStudents, icon: AlertTriangle, change: stats.highRiskChange, isAlert: true, tint: 'red' as const },
     { label: 'Pending Fees', value: stats.pendingFeesCount, icon: DollarSign, change: `${stats.pendingFeesCount} students`, tint: 'orange' as const },
     { label: 'Interventions', value: stats.openInterventions, icon: TrendingUp, change: `${stats.urgentInterventions} urgent`, tint: 'blue' as const },
-  ];
+  ].filter((card) => {
+    if (card.label === 'High Risk') return hasFeature('risk_detection');
+    if (card.label === 'Interventions') return hasFeature('interventions');
+    return true;
+  });
 
   return (
     <div className="space-y-6">
@@ -762,21 +769,23 @@ export default function AdminDashboard() {
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="card">
-          <h3 className="font-semibold mb-4">Risk Distribution</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={riskDistribution.length > 0 ? riskDistribution : [{ name: 'No data', value: 1 }]} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value">
-                  {riskDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
+        {hasFeature('risk_detection') && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="card">
+            <h3 className="font-semibold mb-4">Risk Distribution</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={riskDistribution.length > 0 ? riskDistribution : [{ name: 'No data', value: 1 }]} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value">
+                    {riskDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+        )}
       </div>
 
       <div className="mb-6">

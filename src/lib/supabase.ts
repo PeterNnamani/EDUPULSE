@@ -23,6 +23,7 @@ export type Database = {
           id: string;
           name: string;
           school_type: string | null;
+          school_types: string[] | null;
           phone: string | null;
           email: string;
           address: string | null;
@@ -42,6 +43,7 @@ export type Database = {
           id?: string;
           name: string;
           school_type?: string | null;
+          school_types?: string[] | null;
           phone?: string | null;
           email: string;
           address?: string | null;
@@ -61,6 +63,7 @@ export type Database = {
           id?: string;
           name?: string;
           school_type?: string | null;
+          school_types?: string[] | null;
           phone?: string | null;
           email?: string;
           address?: string | null;

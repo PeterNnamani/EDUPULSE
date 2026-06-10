@@ -20,7 +20,7 @@ interface Props {
  */
 export default function FeatureGate({ feature, children, silent, fallback }: Props) {
   const { user, featureAccessNonce } = useAppStore();
-  const { loading, hasFeature, plan } = useFeatureAccess();
+  const { resolved, hasFeature, plan } = useFeatureAccess();
   const [serverVerified, setServerVerified] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export default function FeatureGate({ feature, children, silent, fallback }: Pro
     };
   }, [user?.schoolId, feature, featureAccessNonce]);
 
-  if (loading || serverVerified === null) {
+  if (!resolved || serverVerified === null) {
     return (
       <div className="flex items-center justify-center py-16">
         <Loader className="w-6 h-6 animate-spin" />

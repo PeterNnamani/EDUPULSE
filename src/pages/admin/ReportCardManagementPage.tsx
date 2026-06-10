@@ -3,7 +3,7 @@ import { resultApprovalService } from '@/services/resultApprovalService';
 import { reportCardGenerationService } from '@/services/reportCardGenerationService';
 import { reportCardAnalyticsService } from '@/services/reportCardAnalyticsService';
 import { resultNotificationService } from '@/services/resultNotificationService';
-import type { ResultApproval } from '@/types';
+import type { ResultApprovalRecord } from '@/types';
 
 interface ReportCardManagementPageProps {
     schoolId: string;
@@ -24,7 +24,7 @@ export const ReportCardManagementPage: React.FC<ReportCardManagementPageProps> =
     termId,
     userRole,
 }) => {
-    const [approval, setApproval] = useState<ResultApproval | null>(null);
+    const [approval, setApproval] = useState<ResultApprovalRecord | null>(null);
     const [approvalProgress, setApprovalProgress] = useState<{
         draftCount: number;
         submittedCount: number;
