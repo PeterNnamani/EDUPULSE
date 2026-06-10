@@ -100,7 +100,21 @@ const MESSAGING_ROLES = new Set(['admin', 'teacher', 'parent', 'principal']);
 
 function isNavItemActive(path: string, pathname: string) {
   if (path === '/messages') return pathname.startsWith('/messages');
+  if (path === '/notifications') return pathname.startsWith('/notifications');
   return pathname === path;
+}
+
+const PAGE_TITLES: Record<string, string> = {
+  '/notifications': 'Notifications',
+  '/settings': 'Settings',
+};
+
+function getPageTitle(pathname: string, navItems: { label: string; path: string }[]) {
+  const navMatch = navItems.find((item) => isNavItemActive(item.path, pathname));
+  if (navMatch) return navMatch.label;
+  if (pathname.startsWith('/notifications')) return PAGE_TITLES['/notifications'];
+  if (pathname.startsWith('/settings')) return PAGE_TITLES['/settings'];
+  return 'Dashboard';
 }
 
 const roleNavMap = {
@@ -359,7 +373,7 @@ export default function Layout() {
           <header className="hidden lg:flex h-16 items-center justify-between px-6 border-b border-border dark:border-dark-border bg-white dark:bg-dark-bg flex-shrink-0">
             <div className="flex items-center gap-4">
               <h2 className="text-lg font-medium dark:text-dark-text">
-                {navItems.find((item) => isNavItemActive(item.path, location.pathname))?.label || 'Dashboard'}
+                {getPageTitle(location.pathname, navItems)}
               </h2>
             </div>
 

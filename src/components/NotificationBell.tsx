@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Bell, Check, Archive, X, Clock, AlertTriangle, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useInAppNotifications } from '@/contexts/InAppNotificationContext';
 import type { Notification } from '@/services/notificationService';
 import NotificationPreviewModal, { hasNotificationPreview } from '@/components/NotificationPreviewModal';
@@ -11,6 +11,7 @@ interface NotificationBellProps {
 }
 
 export default function NotificationBell({ className = '' }: NotificationBellProps) {
+  const navigate = useNavigate();
   const [showPanel, setShowPanel] = useState(false);
   const [previewNotification, setPreviewNotification] = useState<Notification | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -44,6 +45,11 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
   );
 
   const closePanel = useCallback(() => setShowPanel(false), []);
+
+  const openNotificationCenter = useCallback(() => {
+    closePanel();
+    navigate('/notifications', { mask: '/' });
+  }, [closePanel, navigate]);
 
   // Close panel when clicking outside or when focus leaves the notification area
   useEffect(() => {
@@ -249,14 +255,17 @@ export default function NotificationBell({ className = '' }: NotificationBellPro
               )}
             </div>
 
-            <div className="px-4 py-3 border-t border-gray-200 dark:border-dark-border">
-              <Link
-                to="/notifications"
-                onClick={closePanel}
+            <div
+              className="px-4 py-3 border-t border-gray-200 dark:border-dark-border"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={openNotificationCenter}
                 className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-semibold"
               >
                 View all notifications →
-              </Link>
+              </button>
             </div>
           </motion.div>
         )}
