@@ -23,7 +23,8 @@ interface FilterOptions {
 }
 
 export default function CounselorCaseManagement() {
-    const { user, currentSchool } = useAppStore();
+    const user = useAppStore((s) => s.user);
+    const schoolId = user?.schoolId;
     const [filters, setFilters] = useState<FilterOptions>({
         status: 'all',
         priority: 'all',
@@ -33,14 +34,15 @@ export default function CounselorCaseManagement() {
     const [showNewCaseForm, setShowNewCaseForm] = useState(false);
 
     // Fetch counselor's cases
-    const { data: allCases = [], isLoading, refetch } = useQuery(
-        ['counselor-cases', user?.id, currentSchool?.id],
-        async () => {
-            if (!user?.id || !currentSchool?.id) return [];
-            return await interventionService.getCounselorCases(currentSchool.id, user.id);
+    const { data: allCases = [], isLoading, refetch } = useQuery({
+        queryKey: ['counselor-cases', user?.id, schoolId],
+        queryFn: async () => {
+            if (!user?.id || !schoolId) return [] as InterventionCase[];
+            return await interventionService.getCounselorCases(schoolId, user.id);
         },
-        { refetchInterval: 60000 }
-    );
+        enabled: !!user?.id && !!schoolId,
+        refetchInterval: 60000,
+    });
 
     // Filter cases
     const cases = allCases.filter(c => {

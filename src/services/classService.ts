@@ -20,7 +20,7 @@ interface CreateClassRequest {
     schoolId: string;
     name: string;
     gradeLevel: string;
-    section: string;
+    section?: string;
     capacity: number;
     classTeacherId?: string;
 }
@@ -41,12 +41,14 @@ export async function createClass(
 ): Promise<CreateClassResponse> {
     try {
         // Validate inputs
-        if (!request.name || !request.gradeLevel || !request.section) {
+        if (!request.name || !request.gradeLevel) {
             return {
                 success: false,
-                error: 'Class name, grade level, and section are required',
+                error: 'Grade level is required',
             };
         }
+
+        const section = request.section?.trim() || null;
 
         // Create the class record
         const { data: newClass, error: createError } = await supabase
@@ -56,7 +58,7 @@ export async function createClass(
                     school_id: request.schoolId,
                     name: request.name,
                     grade_level: request.gradeLevel,
-                    section: request.section,
+                    section,
                     capacity: request.capacity || 40,
                     class_teacher_id: request.classTeacherId || null,
                     is_active: true,
@@ -130,7 +132,8 @@ export async function getClasses(
                     .from('students')
                     .select('id', { count: 'exact' })
                     .eq('school_id', schoolId)
-                    .eq('class_id', cls.id);
+                    .eq('class_id', cls.id)
+                    .eq('status', 'active');
 
                 const studentCount = !countError && count ? count : 0;
 
@@ -198,7 +201,7 @@ export async function updateClass(
 
         if (updates.name) updateData.name = updates.name;
         if (updates.gradeLevel) updateData.grade_level = updates.gradeLevel;
-        if (updates.section) updateData.section = updates.section;
+        if (updates.section !== undefined) updateData.section = updates.section.trim() || null;
         if (updates.capacity) updateData.capacity = updates.capacity;
         if (updates.classTeacherId) updateData.class_teacher_id = updates.classTeacherId;
 

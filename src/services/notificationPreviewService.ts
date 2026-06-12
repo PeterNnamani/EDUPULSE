@@ -568,9 +568,13 @@ async function loadBehaviourPreview(
     rows: [
       {
         label: 'Student',
-        value: data.students
-          ? `${(data.students as { first_name: string; last_name: string }).first_name} ${(data.students as { first_name: string; last_name: string }).last_name}`
-          : 'Student',
+        value: (() => {
+          const student = Array.isArray(data.students) ? data.students[0] : data.students;
+          if (!student || typeof student !== 'object') return 'Student';
+          const row = student as { first_name?: string; last_name?: string };
+          const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim();
+          return name || 'Student';
+        })(),
       },
       { label: 'Type', value: data.behaviour_type },
       { label: 'Points', value: String(data.points ?? 0) },

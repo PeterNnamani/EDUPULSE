@@ -135,7 +135,7 @@ export default function Login() {
           staffId: response.user.staffId,
           fullName: response.user.fullName,
           phone: response.user.phone,
-          photoUrl: response.user.photoUrl,
+          photoUrl: response.user.photoUrl ?? undefined,
         });
         finish({ role: 'admin' });
         return;
@@ -175,7 +175,7 @@ export default function Login() {
         return;
       }
 
-      const response = await staffLogin(form.staffId, form.pin, selectedRole);
+      const response = await staffLogin(form.staffId, form.pin, selectedRole!);
 
       if (!response.success || !response.user) {
         setError(response.error || 'Login failed');
@@ -195,7 +195,7 @@ export default function Login() {
         staffId: response.user.staffId,
         fullName: response.user.fullName,
         phone: response.user.phone,
-        photoUrl: response.user.photoUrl,
+        photoUrl: response.user.photoUrl ?? undefined,
       });
 
       if (selectedRole === 'teacher' && response.user.schoolId) {

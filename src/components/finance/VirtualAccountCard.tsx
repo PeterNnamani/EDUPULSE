@@ -1,19 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Copy, Check, Loader, CreditCard, Wallet, Lock } from 'lucide-react';
-import { monnifyService, type VirtualAccount } from '@/services/monnifyService';
+import {
+  monnifyService,
+  type MonnifySetupStatus,
+  type VirtualAccount,
+} from '@/services/monnifyService';
 import { feeAssignmentService, type StudentFeeStatus } from '@/services/feeAssignmentService';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import VirtualAccountSummary from '@/components/finance/VirtualAccountSummary';
 
 interface Props {
   schoolId: string;
   studentId: string;
-  /** Known class id (e.g. from parent login) — used for fee lookup without students RLS. */
   classId?: string | null;
-  /** Full child name — shown on the card and synced to Monnify. */
   studentName?: string;
   allowProvision?: boolean;
-  /** Compact card for the parent dashboard hero (right column). */
+  /** When true, creates a virtual account automatically if none exists in the DB. */
+  autoProvision?: boolean;
+  /** Simpler layout for admin edit modals. */
+  variant?: 'default' | 'admin';
   embedded?: boolean;
   className?: string;
 }
@@ -35,41 +41,92 @@ export default function VirtualAccountCard({
   classId,
   studentName,
   allowProvision,
+  autoProvision = false,
+  variant = 'default',
   embedded = false,
   className = '',
 }: Props) {
   const { hasFeature, resolved: planResolved, plan } = useFeatureAccess();
   const virtualAccountsEnabled = planResolved && hasFeature('virtual_accounts');
+  const isAdmin = variant === 'admin';
 
   const [account, setAccount] = useState<VirtualAccount | null>(null);
   const [amountDue, setAmountDue] = useState(0);
   const [feeStatus, setFeeStatus] = useState<StudentFeeStatus>('no_fee');
   const [loading, setLoading] = useState(true);
   const [provisioning, setProvisioning] = useState(false);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [monnifyConfigured, setMonnifyConfigured] = useState<boolean | null>(null);
+  const [monnifySetup, setMonnifySetup] = useState<MonnifySetupStatus | null>(null);
+  const [autoProvisionAttempted, setAutoProvisionAttempted] = useState(false);
 
-  const displayName = studentName?.trim() || account?.accountName?.trim() || '—';
+  const childFullName = studentName?.trim() || account?.accountName?.trim() || '—';
   const canUseVirtualAccounts = virtualAccountsEnabled;
-  const canProvision =
-    canUseVirtualAccounts && monnifyConfigured === true && allowProvision;
+  const monnifyReady = monnifySetup?.state === 'ready';
+  const canProvision = canUseVirtualAccounts && monnifyReady && !!allowProvision;
 
-  useEffect(() => {
-    if (!schoolId || !studentId || !planResolved) return;
+  const wrapClass = embedded
+    ? `w-full ${className}`
+    : isAdmin
+      ? `w-full ${className}`
+      : `w-full max-w-[400px] mx-auto ${className}`;
 
-    if (!virtualAccountsEnabled) {
-      setMonnifyConfigured(false);
+  const handleProvision = useCallback(async () => {
+    if (!canProvision) return false;
+    setProvisioning(true);
+    setProvisionError(null);
+    const res = await monnifyService.ensureVirtualAccount(schoolId, studentId);
+    setProvisioning(false);
+    if (res.success && res.account?.accountNumber) {
+      const fullName = studentName?.trim();
+      setAccount({
+        ...res.account,
+        accountName: fullName || res.account.accountName,
+      });
+      return true;
+    }
+    setProvisionError(res.error ?? 'Failed to generate virtual account.');
+    return false;
+  }, [canProvision, schoolId, studentId, studentName]);
+
+  const refreshMonnifySetup = useCallback(() => {
+    if (!schoolId || !virtualAccountsEnabled) {
+      setMonnifySetup(virtualAccountsEnabled ? null : { state: 'not_saved' });
       return;
     }
+    void monnifyService.getSetupStatus(schoolId).then(setMonnifySetup);
+  }, [schoolId, virtualAccountsEnabled]);
 
-    let active = true;
-    void monnifyService.isConfigured(schoolId).then((configured) => {
-      if (active) setMonnifyConfigured(configured);
-    });
-    return () => {
-      active = false;
+  useEffect(() => {
+    if (!schoolId || !planResolved) return;
+    if (!virtualAccountsEnabled) {
+      setMonnifySetup({ state: 'not_saved' });
+      return;
+    }
+    refreshMonnifySetup();
+  }, [schoolId, planResolved, virtualAccountsEnabled, refreshMonnifySetup]);
+
+  useEffect(() => {
+    const onConfigUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ schoolId?: string }>).detail;
+      if (!detail?.schoolId || detail.schoolId === schoolId) {
+        refreshMonnifySetup();
+      }
     };
-  }, [schoolId, planResolved, virtualAccountsEnabled]);
+    const onFocus = () => refreshMonnifySetup();
+    window.addEventListener('monnify-config-updated', onConfigUpdated);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('monnify-config-updated', onConfigUpdated);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [schoolId, refreshMonnifySetup]);
+
+  useEffect(() => {
+    setAutoProvisionAttempted(false);
+    setProvisionError(null);
+    setAccount(null);
+  }, [schoolId, studentId]);
 
   useEffect(() => {
     if (!schoolId || !studentId) {
@@ -91,9 +148,11 @@ export default function VirtualAccountCard({
     const load = async () => {
       const [acct, feeSummary] = await Promise.all([
         monnifyService.getVirtualAccount(schoolId, studentId),
-        feeAssignmentService
-          .getStudentFeeSummary(schoolId, studentId, { classId })
-          .catch(() => null),
+        isAdmin
+          ? Promise.resolve(null)
+          : feeAssignmentService
+              .getStudentFeeSummary(schoolId, studentId, { classId })
+              .catch(() => null),
       ]);
 
       if (!active) return;
@@ -103,31 +162,43 @@ export default function VirtualAccountCard({
         setFeeStatus(feeSummary.status);
       }
       setLoading(false);
-
-      if (acct?.accountNumber && monnifyConfigured) {
-        void monnifyService.syncVirtualAccountName(schoolId, studentId).then(async () => {
-          if (!active) return;
-          const refreshed = await monnifyService.getVirtualAccount(schoolId, studentId);
-          if (refreshed && active) setAccount(refreshed);
-        });
-      }
     };
 
     void load();
     return () => {
       active = false;
     };
-  }, [schoolId, studentId, classId, studentName, planResolved, virtualAccountsEnabled, monnifyConfigured]);
+  }, [
+    schoolId,
+    studentId,
+    classId,
+    planResolved,
+    virtualAccountsEnabled,
+    isAdmin,
+  ]);
 
-  const handleProvision = async () => {
-    if (!canProvision) return;
-    setProvisioning(true);
-    const res = await monnifyService.ensureVirtualAccount(schoolId, studentId);
-    setProvisioning(false);
-    if (res.success && res.account) {
-      setAccount(res.account);
+  useEffect(() => {
+    if (
+      !autoProvision ||
+      !canProvision ||
+      loading ||
+      provisioning ||
+      autoProvisionAttempted ||
+      account?.accountNumber
+    ) {
+      return;
     }
-  };
+    setAutoProvisionAttempted(true);
+    void handleProvision();
+  }, [
+    autoProvision,
+    canProvision,
+    loading,
+    provisioning,
+    autoProvisionAttempted,
+    account?.accountNumber,
+    handleProvision,
+  ]);
 
   const handleCopy = () => {
     if (account?.accountNumber) {
@@ -137,19 +208,20 @@ export default function VirtualAccountCard({
     }
   };
 
-  const wrapClass = embedded
-    ? `w-full ${className}`
-    : `w-full max-w-[400px] mx-auto ${className}`;
-
   if (loading || !planResolved) {
     return (
       <div className={wrapClass}>
         <div
-          className={`rounded-xl bg-gradient-to-br from-slate-800 to-emerald-900 animate-pulse flex items-center justify-center ${
-            embedded ? 'min-h-[140px]' : 'min-h-[200px]'
+          className={`rounded-xl flex items-center justify-center gap-2 text-secondary-text ${
+            isAdmin
+              ? 'border border-border dark:border-gray-800 py-6'
+              : `bg-gradient-to-br from-slate-800 to-emerald-900 animate-pulse text-white/60 ${
+                  embedded ? 'min-h-[140px]' : 'min-h-[200px]'
+                }`
           }`}
         >
-          <Loader className="w-5 h-5 text-white/60 animate-spin" />
+          <Loader className="w-5 h-5 animate-spin" />
+          {isAdmin && <span className="text-sm">Loading virtual account…</span>}
         </div>
       </div>
     );
@@ -178,18 +250,51 @@ export default function VirtualAccountCard({
     );
   }
 
-  if (!account?.accountNumber) {
-    if (!allowProvision) return null;
-
-    if (monnifyConfigured === null) {
+  if (account?.accountNumber) {
+    if (isAdmin) {
       return (
-        <div className={`${wrapClass} card flex items-center justify-center py-8`}>
+        <div className={wrapClass}>
+          <VirtualAccountSummary
+            bankName={account.bankName}
+            accountNumber={account.accountNumber}
+            accountName={childFullName}
+          />
+        </div>
+      );
+    }
+  } else if (!allowProvision) {
+    return null;
+  }
+
+  if (!account?.accountNumber) {
+    if (monnifySetup === null) {
+      return (
+        <div className={`${wrapClass} card flex items-center justify-center py-8 gap-2`}>
           <Loader className="w-5 h-5 animate-spin text-secondary-text" />
+          {isAdmin && <span className="text-sm text-secondary-text">Checking Monnify…</span>}
         </div>
       );
     }
 
-    if (monnifyConfigured === false) {
+    if (monnifySetup.state !== 'ready') {
+      const setupMessage =
+        monnifySetup.state === 'disabled'
+          ? `Monnify is saved but not enabled. Turn on "Enable Monnify" in Settings → Payments${
+              childFullName !== '—' ? ` before generating an account for ${childFullName}` : ''
+            }.`
+          : monnifySetup.state === 'incomplete' || monnifySetup.state === 'unreadable'
+            ? monnifySetup.message
+            : `Add your Monnify API keys in Settings → Payments${
+                childFullName !== '—' ? ` before generating an account for ${childFullName}` : ''
+              }.`;
+
+      const setupTitle =
+        monnifySetup.state === 'disabled'
+          ? 'Enable Monnify'
+          : monnifySetup.state === 'not_saved'
+            ? 'Monnify not configured'
+            : 'Monnify setup incomplete';
+
       return (
         <div className={`${wrapClass} card border border-border dark:border-gray-800`}>
           <div className="flex items-start gap-3">
@@ -197,11 +302,8 @@ export default function VirtualAccountCard({
               <Lock className="w-4 h-4 text-secondary-text" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium mb-1">Monnify not configured</p>
-              <p className="text-sm text-secondary-text mb-3">
-                Add your Monnify API keys in Settings → Payments before generating accounts
-                {displayName !== '—' ? ` for ${displayName}` : ''}.
-              </p>
+              <p className="text-sm font-medium mb-1">{setupTitle}</p>
+              <p className="text-sm text-secondary-text mb-3">{setupMessage}</p>
               <Link to="/settings" className="text-sm text-blue-600 dark:text-blue-400 hover:underline">
                 Open payment settings
               </Link>
@@ -212,19 +314,76 @@ export default function VirtualAccountCard({
     }
 
     return (
-      <div className={`${wrapClass} card`}>
-        <p className="text-sm text-secondary-text mb-3">
-          No payment account yet{displayName !== '—' ? ` for ${displayName}` : ''}.
-        </p>
-        <button
-          type="button"
-          onClick={handleProvision}
-          disabled={provisioning || !canProvision}
-          className="btn-secondary flex items-center gap-2 text-sm disabled:opacity-50"
-        >
-          {provisioning ? <Loader className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
-          Generate Virtual Account
-        </button>
+      <div className={`${wrapClass} ${isAdmin ? '' : 'card'}`}>
+        {isAdmin ? (
+          <div className="rounded-xl border border-dashed border-border dark:border-gray-700 p-4">
+            <p className="text-sm font-medium mb-1">Virtual account</p>
+            <p className="text-sm text-secondary-text mb-3">
+              {provisioning || (autoProvision && !autoProvisionAttempted)
+                ? 'Generating virtual account…'
+                : `No payment account yet${childFullName !== '—' ? ` for ${childFullName}` : ''}.`}
+            </p>
+            {(provisioning || (autoProvision && !provisionError && !autoProvisionAttempted)) && (
+              <div className="flex items-center gap-2 text-sm text-secondary-text">
+                <Loader className="w-4 h-4 animate-spin" />
+                Creating account with Monnify…
+              </div>
+            )}
+            {!autoProvision && !provisioning && (
+              <button
+                type="button"
+                onClick={() => void handleProvision()}
+                disabled={provisioning || !canProvision}
+                className="btn-secondary flex items-center gap-2 text-sm disabled:opacity-50"
+              >
+                <CreditCard className="w-4 h-4" />
+                Generate Virtual Account
+              </button>
+            )}
+            {provisionError && (
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-3">{provisionError}</p>
+            )}
+            {provisionError && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAutoProvisionAttempted(false);
+                  void handleProvision();
+                }}
+                className="btn-secondary text-xs mt-2"
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-secondary-text mb-3">
+              {provisioning
+                ? 'Generating virtual account…'
+                : `No payment account yet${childFullName !== '—' ? ` for ${childFullName}` : ''}.`}
+            </p>
+            {provisioning ? (
+              <div className="flex items-center gap-2 text-sm text-secondary-text">
+                <Loader className="w-4 h-4 animate-spin" />
+                Creating account…
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handleProvision()}
+                disabled={provisioning || !canProvision}
+                className="btn-secondary flex items-center gap-2 text-sm disabled:opacity-50"
+              >
+                <CreditCard className="w-4 h-4" />
+                Generate Virtual Account
+              </button>
+            )}
+            {provisionError && (
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-3">{provisionError}</p>
+            )}
+          </>
+        )}
       </div>
     );
   }
@@ -274,8 +433,8 @@ export default function VirtualAccountCard({
               </div>
               <div className="text-right min-w-0 max-w-[48%]">
                 <p className="text-[9px] uppercase tracking-wider text-emerald-200/60">Account name</p>
-                <p className="text-xs font-medium text-white/95 truncate" title={displayName}>
-                  {displayName}
+                <p className="text-xs font-medium text-white/95 truncate" title={childFullName}>
+                  {childFullName}
                 </p>
               </div>
             </div>
@@ -357,7 +516,7 @@ export default function VirtualAccountCard({
             </div>
             <div className="sm:border-l sm:border-white/10 sm:pl-4">
               <p className="text-[10px] uppercase tracking-wider text-emerald-200/60 mb-1">Account name</p>
-              <p className="text-sm font-medium text-white/95 break-words">{displayName}</p>
+              <p className="text-sm font-medium text-white/95 break-words">{childFullName}</p>
             </div>
           </div>
         </div>

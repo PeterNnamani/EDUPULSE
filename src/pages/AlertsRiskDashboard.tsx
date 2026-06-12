@@ -30,38 +30,38 @@ import {
 } from 'recharts';
 
 export default function AlertsRiskDashboard() {
-    const { currentSchool } = useAppStore();
+    const schoolId = useAppStore((s) => s.user?.schoolId);
     const [selectedAlert, setSelectedAlert] = useState<StudentAlert | null>(null);
 
-    // Fetch open alerts
-    const { data: openAlerts = [], isLoading: alertsLoading } = useQuery(
-        ['open-alerts', currentSchool?.id],
-        async () => {
-            if (!currentSchool?.id) return [];
-            return await alertManagementService.getOpenAlerts(currentSchool.id);
+    const { data: openAlerts = [], isLoading: alertsLoading } = useQuery({
+        queryKey: ['open-alerts', schoolId],
+        queryFn: async () => {
+            if (!schoolId) return [] as StudentAlert[];
+            return await alertManagementService.getOpenAlerts(schoolId);
         },
-        { refetchInterval: 60000 }
-    );
+        enabled: !!schoolId,
+        refetchInterval: 60000,
+    });
 
-    // Fetch high-risk students
-    const { data: highRiskStudents = [], isLoading: riskLoading } = useQuery(
-        ['high-risk-students', currentSchool?.id],
-        async () => {
-            if (!currentSchool?.id) return [];
-            return await riskDetectionService.getHighRiskStudents(currentSchool.id, 'high');
+    const { data: highRiskStudents = [], isLoading: riskLoading } = useQuery({
+        queryKey: ['high-risk-students', schoolId],
+        queryFn: async () => {
+            if (!schoolId) return [] as RiskScore[];
+            return await riskDetectionService.getHighRiskStudents(schoolId, 'high');
         },
-        { refetchInterval: 60000 }
-    );
+        enabled: !!schoolId,
+        refetchInterval: 60000,
+    });
 
-    // Fetch critical risk students
-    const { data: criticalStudents = [] } = useQuery(
-        ['critical-risk-students', currentSchool?.id],
-        async () => {
-            if (!currentSchool?.id) return [];
-            return await riskDetectionService.getHighRiskStudents(currentSchool.id, 'critical');
+    const { data: criticalStudents = [] } = useQuery({
+        queryKey: ['critical-risk-students', schoolId],
+        queryFn: async () => {
+            if (!schoolId) return [] as RiskScore[];
+            return await riskDetectionService.getHighRiskStudents(schoolId, 'critical');
         },
-        { refetchInterval: 60000 }
-    );
+        enabled: !!schoolId,
+        refetchInterval: 60000,
+    });
 
     // Calculate statistics
     const stats = {

@@ -64,7 +64,7 @@ export default function AttendancePage() {
       if (!selectedClass) return;
 
       try {
-        const classStudents = await getClassStudents(selectedClass, user.schoolId);
+        const classStudents = await getClassStudents(selectedClass, user?.schoolId);
         setStudents(classStudents);
 
         // Load existing attendance for this date
@@ -106,7 +106,7 @@ export default function AttendancePage() {
     try {
       const attendanceData = students.map((student) => ({
         studentId: student.id,
-        status: attendance[student.id] || 'absent',
+        status: (attendance[student.id] || 'absent') as 'present' | 'absent' | 'late' | 'excused',
       }));
 
       const result = await recordClassAttendance(

@@ -10,6 +10,7 @@ import {
   getClassTuitionMap,
   getClassTuitionAmount,
 } from '@/services/classTuitionService';
+import { formatClassLabel } from '@/utils/displayUtils';
 
 interface ClassForm {
   name: string;
@@ -53,6 +54,9 @@ export default function ClassManagement() {
     earlyYearsLevels.some((l) => level.toLowerCase().includes(l.toLowerCase())) ||
     /creche|playgroup|nursery|kindergarten|\bkg\b|^pre/i.test(level);
   const sections = ['A', 'B', 'C', 'D', 'E'];
+
+  const buildClassName = (gradeLevel: string, section?: string) =>
+    formatClassLabel(gradeLevel, section);
 
   // Load classes on mount
   useEffect(() => {
@@ -101,14 +105,13 @@ export default function ClassManagement() {
 
     setLoading(true);
     try {
-      // Generate class name from grade level and section
-      const className = `${formData.gradeLevel.split(' ')[formData.gradeLevel.split(' ').length - 1]}${formData.section}`;
+      const className = buildClassName(formData.gradeLevel, formData.section);
 
       const result = await createClass({
         schoolId: user.schoolId,
         name: className,
         gradeLevel: formData.gradeLevel,
-        section: formData.section,
+        section: formData.section.trim() || undefined,
         capacity: parseInt(formData.capacity) || 40,
       });
 
@@ -158,10 +161,12 @@ export default function ClassManagement() {
 
     setLoading(true);
     try {
+      const className = buildClassName(editingClass.gradeLevel, editingClass.section);
+
       const result = await updateClass(editingClass.id, {
-        name: editingClass.name,
+        name: className,
         gradeLevel: editingClass.gradeLevel,
-        section: editingClass.section,
+        section: (editingClass.section ?? '').trim(),
         capacity: editingClass.capacity,
       });
 
@@ -226,7 +231,7 @@ export default function ClassManagement() {
       id: cls.id,
       name: cls.name,
       gradeLevel: cls.grade_level,
-      section: cls.section,
+      section: cls.section ?? '',
       capacity: cls.capacity,
       fee: classFee,
     });
@@ -275,9 +280,10 @@ export default function ClassManagement() {
               className="card-hover"
             >
               <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-bold">{cls.name}</h3>
-                  <p className="text-sm text-secondary-text">{cls.grade_level} - Section {cls.section}</p>
+                <div className="min-w-0 pr-2">
+                  <h3 className="text-xl font-bold leading-snug">
+                    {formatClassLabel(cls.grade_level, cls.section, cls.name)}
+                  </h3>
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => openEditModal(cls)} className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors">
@@ -361,14 +367,13 @@ export default function ClassManagement() {
               </div>
 
               <div>
-                <label className="label mb-1.5 block">Section *</label>
+                <label className="label mb-1.5 block">Section (optional)</label>
                 <select
-                  required
                   value={formData.section}
                   onChange={(e) => setFormData({ ...formData, section: e.target.value })}
                   className="input-field"
                 >
-                  <option value="">Select section</option>
+                  <option value="">No section</option>
                   {sections.map((section) => (
                     <option key={section} value={section}>{section}</option>
                   ))}
@@ -454,12 +459,13 @@ export default function ClassManagement() {
               </div>
 
               <div>
-                <label className="label mb-1.5 block">Section</label>
+                <label className="label mb-1.5 block">Section (optional)</label>
                 <select
-                  value={editingClass.section}
+                  value={editingClass.section ?? ''}
                   onChange={(e) => setEditingClass({ ...editingClass, section: e.target.value })}
                   className="input-field"
                 >
+                  <option value="">No section</option>
                   {sections.map((section) => (
                     <option key={section} value={section}>{section}</option>
                   ))}

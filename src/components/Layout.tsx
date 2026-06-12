@@ -143,7 +143,35 @@ const NAV_FEATURE_MAP: Record<string, FeatureKey> = {
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, darkMode, toggleDarkMode, sidebarOpen, toggleSidebar, logout, school, isAuthenticated } = useAppStore();
+  const { user, darkMode, toggleDarkMode, sidebarOpen, toggleSidebar, logout, school, setSchool, isAuthenticated } = useAppStore();
+
+  useEffect(() => {
+    const schoolId = user?.schoolId;
+    if (!schoolId) return;
+
+    const existing = useAppStore.getState().school.currentSchool;
+    if (existing?.id === schoolId) return;
+
+    let active = true;
+    void import('@/services/schoolSettingsService').then(({ fetchSchoolProfile }) =>
+      fetchSchoolProfile(schoolId).then((profile) => {
+        if (!active || !profile) return;
+        const prev = useAppStore.getState().school;
+        setSchool({
+          ...prev,
+          currentSchool: {
+            id: schoolId,
+            name: profile.name,
+            subscriptionStatus: 'active',
+          },
+        });
+      })
+    );
+
+    return () => {
+      active = false;
+    };
+  }, [user?.schoolId, setSchool]);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);

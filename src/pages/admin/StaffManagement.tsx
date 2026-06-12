@@ -195,7 +195,7 @@ export default function StaffManagement() {
         .eq('school_id', user.schoolId);
 
       if (error) throw error;
-      setClassSubjectRows((data as typeof classSubjectRows) || []);
+      setClassSubjectRows((data as unknown as typeof classSubjectRows) || []);
     } catch (error) {
       console.error('Error fetching class subjects:', error);
       setClassSubjectRows([]);

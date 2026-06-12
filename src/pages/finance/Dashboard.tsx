@@ -165,7 +165,7 @@ export default function FinanceDashboard() {
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
                   }}
-                  formatter={(value: number) => [`NGN ${Number(value).toLocaleString()}`, '']}
+                  formatter={(value) => [`NGN ${Number(value ?? 0).toLocaleString()}`, '']}
                 />
                 <Area type="monotone" dataKey="revenue" stroke="#6B7280" fill="#6B7280" fillOpacity={0.08} name="Expected (avg)" />
                 <Area type="monotone" dataKey="collections" stroke="#16A34A" fill="#16A34A" fillOpacity={0.15} name="Collected" />
@@ -197,7 +197,7 @@ export default function FinanceDashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
                   <XAxis type="number" stroke="#6B7280" fontSize={12} tickFormatter={(v) => `${v / 1000}K`} />
                   <YAxis dataKey="class" type="category" stroke="#6B7280" fontSize={12} width={56} />
-                  <Tooltip formatter={(value: number) => [`NGN ${Number(value).toLocaleString()}`, 'Outstanding']} />
+                  <Tooltip formatter={(value) => [`NGN ${Number(value ?? 0).toLocaleString()}`, 'Outstanding']} />
                   <Bar dataKey="amount" fill="#EF4444" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>

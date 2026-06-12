@@ -1,11 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Filter, MoreVertical, Edit2, Trash2, UserPlus, Download, Upload, Copy, Check } from 'lucide-react';
+import { Plus, Search, Filter, MoreVertical, Edit2, Trash2, UserPlus, UserCheck, CreditCard, Download, Upload, Copy, Check } from 'lucide-react';
 import { useAppStore } from '@/store';
-import { getStudents, createStudentWithParent, updateStudent } from '@/services/studentService';
+import {
+  getStudents,
+  createStudentWithParent,
+  updateStudent,
+  STUDENT_STATUSES,
+  normalizeStudentStatus,
+} from '@/services/studentService';
 import { getClasses } from '@/services/classService';
 import VirtualAccountCard from '@/components/finance/VirtualAccountCard';
-import { getInitials } from '@/utils/displayUtils';
+import VirtualAccountSummary from '@/components/finance/VirtualAccountSummary';
+import { useFeatureAccess } from '@/hooks/useFeatureAccess';
+import { monnifyService } from '@/services/monnifyService';
+import { formatClassLabel, formatStudentFullName, getInitials } from '@/utils/displayUtils';
 
 interface StudentForm {
   firstName: string;
@@ -42,19 +51,47 @@ interface EditingStudent {
   status: string;
 }
 
+interface StatusToggleTarget {
+  id: string;
+  firstName: string;
+  lastName: string;
+  action: 'activate' | 'deactivate';
+}
+
 export default function StudentManagement() {
   const { user } = useAppStore();
+  const { hasFeature, resolved: planResolved } = useFeatureAccess();
+  const virtualAccountsEnabled = planResolved && hasFeature('virtual_accounts');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [students, setStudents] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingStudent, setEditingStudent] = useState<EditingStudent | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [successData, setSuccessData] = useState<{ studentId: string; firstName: string; lastName: string } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [successData, setSuccessData] = useState<{
+    id: string;
+    studentId: string;
+    firstName: string;
+    middleName?: string;
+    lastName: string;
+    virtualAccount?: {
+      accountNumber: string | null;
+      accountName: string | null;
+      bankName: string | null;
+    };
+    virtualAccountError?: string;
+  } | null>(null);
+  const [retryingVirtualAccount, setRetryingVirtualAccount] = useState(false);
+  const [copied, setCopied] = useState<'id' | 'account' | null>(null);
+  const [statusToggleTarget, setStatusToggleTarget] = useState<StatusToggleTarget | null>(null);
+  const [togglingStatusId, setTogglingStatusId] = useState<string | null>(null);
+  const [virtualAccountsByStudentId, setVirtualAccountsByStudentId] = useState<
+    Record<string, { accountNumber: string; bankName: string | null }>
+  >({});
   const [formData, setFormData] = useState<StudentForm>({
     firstName: '',
     lastName: '',
@@ -85,30 +122,43 @@ export default function StudentManagement() {
     'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara', 'FCT'
   ];
 
-  const statuses = ['active', 'graduated', 'withdrawn', 'suspended'];
+  const statuses = STUDENT_STATUSES;
 
-  // Load students and classes on mount
+  const classLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const cls of classes) {
+      map.set(cls.id, formatClassLabel(cls.grade_level, cls.section, cls.name));
+    }
+    return map;
+  }, [classes]);
+
+  // Load students and classes on mount; re-fetch VA index when plan feature resolves.
   useEffect(() => {
     if (user?.schoolId) {
       loadData();
     }
-  }, [user?.schoolId]);
+  }, [user?.schoolId, virtualAccountsEnabled]);
 
-  const loadData = async () => {
+  const loadData = async (options?: { silent?: boolean }) => {
     if (!user?.schoolId) return;
 
-    setLoading(true);
+    if (!options?.silent) setLoading(true);
     try {
-      const [studentsData, classesData] = await Promise.all([
-        getStudents(user.schoolId),
-        getClasses(user.schoolId),
+      const schoolId = user.schoolId;
+      const [studentsData, classesData, vaIndex] = await Promise.all([
+        getStudents(schoolId),
+        getClasses(schoolId),
+        virtualAccountsEnabled
+          ? monnifyService.getSchoolVirtualAccountIndex(schoolId)
+          : Promise.resolve(new Map<string, { accountNumber: string; bankName: string | null }>()),
       ]);
       setStudents(studentsData);
       setClasses(classesData);
+      setVirtualAccountsByStudentId(virtualAccountsEnabled ? Object.fromEntries(vaIndex) : {});
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   };
 
@@ -141,6 +191,17 @@ export default function StudentManagement() {
     e.preventDefault();
     if (!user?.schoolId) return;
 
+    const parentPhone =
+      formData.fatherPhone.trim() ||
+      formData.motherPhone.trim() ||
+      formData.guardianPhone.trim();
+    if (!parentPhone) {
+      alert(
+        'At least one parent or guardian phone number is required so parents can access the portal.'
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const result = await createStudentWithParent({
@@ -168,10 +229,15 @@ export default function StudentManagement() {
       });
 
       if (result.success && result.data) {
+        setCopied(null);
         setSuccessData({
+          id: result.data.id,
           studentId: result.data.studentId,
           firstName: result.data.firstName,
+          middleName: formData.middleName || undefined,
           lastName: result.data.lastName,
+          virtualAccount: result.data.virtualAccount,
+          virtualAccountError: result.data.virtualAccountError,
         });
         setShowSuccessModal(true);
         setShowAddModal(false);
@@ -190,9 +256,9 @@ export default function StudentManagement() {
 
   const handleEditStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingStudent) return;
+    if (!editingStudent || savingEdit) return;
 
-    setLoading(true);
+    setSavingEdit(true);
     try {
       const result = await updateStudent(editingStudent.id, {
         firstName: editingStudent.firstName,
@@ -205,9 +271,27 @@ export default function StudentManagement() {
       });
 
       if (result.success) {
+        const normalizedStatus =
+          normalizeStudentStatus(editingStudent.status) ?? editingStudent.status;
+        setStudents((prev) =>
+          prev.map((s) =>
+            s.id === editingStudent.id
+              ? {
+                  ...s,
+                  first_name: editingStudent.firstName,
+                  last_name: editingStudent.lastName,
+                  middle_name: editingStudent.middleName || null,
+                  gender: editingStudent.gender,
+                  date_of_birth: editingStudent.dateOfBirth || null,
+                  class_id: editingStudent.classId,
+                  status: normalizedStatus,
+                }
+              : s
+          )
+        );
         setShowEditModal(false);
         setEditingStudent(null);
-        await loadData();
+        void loadData({ silent: true });
       } else {
         alert(result.error || 'Failed to update student');
       }
@@ -215,7 +299,40 @@ export default function StudentManagement() {
       console.error('Error updating student:', error);
       alert('Error updating student. Please try again.');
     } finally {
-      setLoading(false);
+      setSavingEdit(false);
+    }
+  };
+
+  const getStudentActivationAction = (
+    status: string
+  ): 'activate' | 'deactivate' | null => {
+    const normalized = normalizeStudentStatus(status);
+    if (normalized === 'active') return 'deactivate';
+    if (normalized === 'withdrawn' || normalized === 'suspended') return 'activate';
+    return null;
+  };
+
+  const handleConfirmStatusToggle = async () => {
+    if (!statusToggleTarget) return;
+
+    const newStatus = statusToggleTarget.action === 'deactivate' ? 'withdrawn' : 'active';
+    setTogglingStatusId(statusToggleTarget.id);
+    try {
+      const result = await updateStudent(statusToggleTarget.id, { status: newStatus });
+      if (!result.success) {
+        alert(result.error || `Failed to ${statusToggleTarget.action} student`);
+        return;
+      }
+      setStudents((prev) =>
+        prev.map((s) => (s.id === statusToggleTarget.id ? { ...s, status: newStatus } : s))
+      );
+      setStatusToggleTarget(null);
+      void loadData({ silent: true });
+    } catch (error) {
+      console.error('Error toggling student status:', error);
+      alert('Something went wrong. Please try again.');
+    } finally {
+      setTogglingStatusId(null);
     }
   };
 
@@ -229,15 +346,15 @@ export default function StudentManagement() {
       gender: student.gender,
       dateOfBirth: student.date_of_birth || '',
       classId: student.class_id,
-      status: student.status,
+      status: normalizeStudentStatus(student.status) ?? 'active',
     });
     setShowEditModal(true);
   };
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, field: 'id' | 'account') => {
     navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setCopied(field);
+    setTimeout(() => setCopied(null), 2000);
   };
 
   const filteredStudents = students.filter((student) => {
@@ -257,11 +374,21 @@ export default function StudentManagement() {
           <p className="text-secondary-text">Manage student records and information</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="btn-secondary flex items-center gap-2">
+          <button
+            type="button"
+            className="btn-secondary flex items-center gap-2 opacity-50 cursor-not-allowed"
+            disabled
+            title="Bulk import coming soon"
+          >
             <Upload className="w-4 h-4" />
             Import
           </button>
-          <button className="btn-secondary flex items-center gap-2">
+          <button
+            type="button"
+            className="btn-secondary flex items-center gap-2 opacity-50 cursor-not-allowed"
+            disabled
+            title="Bulk export coming soon"
+          >
             <Download className="w-4 h-4" />
             Export
           </button>
@@ -292,7 +419,9 @@ export default function StudentManagement() {
           >
             <option value="">All Classes</option>
             {classes.map((cls) => (
-              <option key={cls.id} value={cls.id}>{cls.name}</option>
+              <option key={cls.id} value={cls.id}>
+                {formatClassLabel(cls.grade_level, cls.section, cls.name)}
+              </option>
             ))}
           </select>
           <button className="btn-secondary flex items-center gap-2">
@@ -320,6 +449,11 @@ export default function StudentManagement() {
                 <th className="px-4 py-3 text-left">Class</th>
                 <th className="px-4 py-3 text-left">Gender</th>
                 <th className="px-4 py-3 text-left">Status</th>
+                {virtualAccountsEnabled && (
+                  <th className="px-4 py-3 text-left" title="Virtual payment account">
+                    Account
+                  </th>
+                )}
                 <th className="px-4 py-3 text-left rounded-r-lg">Actions</th>
               </tr>
             </thead>
@@ -350,17 +484,48 @@ export default function StudentManagement() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="badge badge-info">{student.class_id}</span>
+                    <span className="badge badge-info">
+                      {student.class_id
+                        ? classLabelById.get(student.class_id) ?? '—'
+                        : '—'}
+                    </span>
                   </td>
                   <td className="px-4 py-3 capitalize">{student.gender}</td>
                   <td className="px-4 py-3">
-                    <span className={`badge ${student.status === 'active' ? 'badge-success' :
-                      student.status === 'graduated' ? 'badge-info' :
-                        'badge-danger'
-                      }`}>
-                      {student.status}
+                    <span
+                      className={`badge ${
+                        student.status === 'active'
+                          ? 'badge-success'
+                          : student.status === 'graduated'
+                            ? 'badge-info'
+                            : student.status === 'withdrawn' || student.status === 'suspended'
+                              ? 'badge-danger'
+                              : 'badge-info'
+                      }`}
+                    >
+                      {normalizeStudentStatus(student.status) ?? student.status}
                     </span>
                   </td>
+                  {virtualAccountsEnabled && (
+                    <td className="px-4 py-3">
+                      {virtualAccountsByStudentId[student.id] ? (
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 text-xs font-medium"
+                          title={[
+                            virtualAccountsByStudentId[student.id].bankName ?? 'Virtual account',
+                            virtualAccountsByStudentId[student.id].accountNumber,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        >
+                          <CreditCard className="w-3.5 h-3.5 shrink-0" />
+                          <span className="hidden sm:inline">Virtual</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-secondary-text">—</span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <button
@@ -371,18 +536,44 @@ export default function StudentManagement() {
                         <Edit2 className="w-3.5 h-3.5" />
                         Edit
                       </button>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!confirm(`Mark ${student.first_name} ${student.last_name} as inactive?`)) return;
-                          await updateStudent(student.id, { status: 'inactive' });
-                          await loadData();
-                        }}
-                        className="btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Deactivate
-                      </button>
+                      {(() => {
+                        const activationAction = getStudentActivationAction(student.status);
+                        if (!activationAction) return null;
+                        const isDeactivating = activationAction === 'deactivate';
+                        const isBusy = togglingStatusId === student.id;
+                        return (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() =>
+                              setStatusToggleTarget({
+                                id: student.id,
+                                firstName: student.first_name,
+                                lastName: student.last_name,
+                                action: activationAction,
+                              })
+                            }
+                            className={`btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 disabled:opacity-50 ${
+                              isDeactivating
+                                ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                : 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'
+                            }`}
+                          >
+                            {isDeactivating ? (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            ) : (
+                              <UserCheck className="w-3.5 h-3.5" />
+                            )}
+                            {isBusy
+                              ? isDeactivating
+                                ? 'Deactivating…'
+                                : 'Activating…'
+                              : isDeactivating
+                                ? 'Deactivate'
+                                : 'Activate'}
+                          </button>
+                        );
+                      })()}
                     </div>
                   </td>
                 </motion.tr>
@@ -489,7 +680,9 @@ export default function StudentManagement() {
                     >
                       <option value="">Select class</option>
                       {classes.map((cls) => (
-                        <option key={cls.id} value={cls.id}>{cls.name}</option>
+                        <option key={cls.id} value={cls.id}>
+                          {formatClassLabel(cls.grade_level, cls.section, cls.name)}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -760,7 +953,9 @@ export default function StudentManagement() {
                   >
                     <option value="">Select class</option>
                     {classes.map((cls) => (
-                      <option key={cls.id} value={cls.id}>{cls.name}</option>
+                      <option key={cls.id} value={cls.id}>
+                        {formatClassLabel(cls.grade_level, cls.section, cls.name)}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -779,12 +974,20 @@ export default function StudentManagement() {
               </div>
 
               {user?.schoolId && editingStudent.id && (
-                <div className="pt-4">
+                <div className="pt-4 border-t border-border dark:border-gray-800">
                   <VirtualAccountCard
+                    key={`va-${editingStudent.id}`}
                     schoolId={user.schoolId}
                     studentId={editingStudent.id}
-                    studentName={`${editingStudent.firstName ?? ''} ${editingStudent.lastName ?? ''}`.trim()}
+                    classId={editingStudent.classId}
+                    studentName={formatStudentFullName(
+                      editingStudent.firstName,
+                      editingStudent.middleName,
+                      editingStudent.lastName
+                    )}
                     allowProvision
+                    autoProvision
+                    variant="admin"
                   />
                 </div>
               )}
@@ -793,11 +996,86 @@ export default function StudentManagement() {
                 <button type="button" onClick={() => setShowEditModal(false)} className="btn-secondary">
                   Cancel
                 </button>
-                <button type="submit" disabled={loading} className="btn-primary">
-                  {loading ? 'Saving...' : 'Save Changes'}
+                <button type="submit" disabled={savingEdit} className="btn-primary">
+                  {savingEdit ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Activate / Deactivate confirmation */}
+      {statusToggleTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md bg-white dark:bg-dark-bg rounded-2xl shadow-xl overflow-hidden"
+          >
+            <div className="p-6">
+              <div
+                className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                  statusToggleTarget.action === 'deactivate'
+                    ? 'bg-red-100 dark:bg-red-900/30'
+                    : 'bg-green-100 dark:bg-green-900/30'
+                }`}
+              >
+                {statusToggleTarget.action === 'deactivate' ? (
+                  <Trash2 className="w-7 h-7 text-red-600" />
+                ) : (
+                  <UserCheck className="w-7 h-7 text-green-600" />
+                )}
+              </div>
+              <h2 className="text-xl font-bold text-center mb-2">
+                {statusToggleTarget.action === 'deactivate' ? 'Deactivate student?' : 'Activate student?'}
+              </h2>
+              <p className="text-secondary-text text-center mb-6">
+                {statusToggleTarget.action === 'deactivate' ? (
+                  <>
+                    <span className="font-medium text-primary-text">
+                      {statusToggleTarget.firstName} {statusToggleTarget.lastName}
+                    </span>{' '}
+                    will be marked as withdrawn and hidden from active student lists.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium text-primary-text">
+                      {statusToggleTarget.firstName} {statusToggleTarget.lastName}
+                    </span>{' '}
+                    will be restored to active status.
+                  </>
+                )}
+              </p>
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStatusToggleTarget(null)}
+                  disabled={togglingStatusId !== null}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmStatusToggle()}
+                  disabled={togglingStatusId !== null}
+                  className={
+                    statusToggleTarget.action === 'deactivate'
+                      ? 'btn-primary bg-red-600 hover:bg-red-700 border-red-600'
+                      : 'btn-primary'
+                  }
+                >
+                  {togglingStatusId !== null
+                    ? statusToggleTarget.action === 'deactivate'
+                      ? 'Deactivating…'
+                      : 'Activating…'
+                    : statusToggleTarget.action === 'deactivate'
+                      ? 'Deactivate'
+                      : 'Activate'}
+                </button>
+              </div>
+            </div>
           </motion.div>
         </div>
       )}
@@ -808,7 +1086,7 @@ export default function StudentManagement() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-full max-w-md bg-white dark:bg-dark-bg rounded-2xl shadow-xl overflow-hidden"
+            className="w-full max-w-lg bg-white dark:bg-dark-bg rounded-2xl shadow-xl overflow-hidden"
           >
             <div className="p-6 text-center">
               <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4">
@@ -821,18 +1099,75 @@ export default function StudentManagement() {
                 {successData.firstName} {successData.lastName} has been registered with ID {successData.studentId}
               </p>
 
-              <div className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card mb-6 text-left">
-                <p className="text-xs text-secondary-text mb-2">Student ID:</p>
+              <div className="p-4 rounded-xl bg-secondary-bg dark:bg-dark-card mb-4 text-left">
+                <p className="text-xs text-secondary-text mb-2">Student ID</p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 font-mono text-sm">{successData.studentId}</code>
                   <button
-                    onClick={() => copyToClipboard(successData.studentId)}
+                    type="button"
+                    onClick={() => copyToClipboard(successData.studentId, 'id')}
                     className="p-2 rounded-lg hover:bg-border transition-colors"
                   >
-                    {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                    {copied === 'id' ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
+
+              {successData.virtualAccount?.accountNumber && (
+                <VirtualAccountSummary
+                  className="mb-4 text-left"
+                  bankName={successData.virtualAccount.bankName}
+                  accountNumber={successData.virtualAccount.accountNumber}
+                  accountName={formatStudentFullName(
+                    successData.firstName,
+                    successData.middleName,
+                    successData.lastName
+                  )}
+                />
+              )}
+
+              {successData.virtualAccountError && !successData.virtualAccount?.accountNumber && (
+                <div className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2 mb-4 text-left">
+                  <p>Virtual account was not created: {successData.virtualAccountError}</p>
+                  {user?.schoolId && (
+                    <button
+                      type="button"
+                      disabled={retryingVirtualAccount}
+                      onClick={async () => {
+                        if (!user?.schoolId || !successData.id) return;
+                        setRetryingVirtualAccount(true);
+                        const { monnifyService } = await import('@/services/monnifyService');
+                        const res = await monnifyService.ensureVirtualAccount(user.schoolId, successData.id);
+                        setRetryingVirtualAccount(false);
+                        if (res.success && res.account?.accountNumber) {
+                          const fullName = formatStudentFullName(
+                            successData.firstName,
+                            successData.middleName,
+                            successData.lastName
+                          );
+                          setSuccessData({
+                            ...successData,
+                            virtualAccount: {
+                              accountNumber: res.account.accountNumber,
+                              accountName: fullName,
+                              bankName: res.account.bankName,
+                            },
+                            virtualAccountError: undefined,
+                          });
+                        } else {
+                          setSuccessData({
+                            ...successData,
+                            virtualAccountError: res.error ?? successData.virtualAccountError,
+                          });
+                        }
+                      }}
+                      className="btn-secondary text-xs mt-2"
+                    >
+                      {retryingVirtualAccount ? 'Generating…' : 'Generate virtual account'}
+                    </button>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={() => setShowSuccessModal(false)}

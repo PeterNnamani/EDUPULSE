@@ -1079,8 +1079,20 @@ export function answerFromAccountContext(
   ) {
     const { session, term } = knowledgeBase.academicCalendar;
     const parts: string[] = [];
-    if (session) parts.push(`Session: **${session.name}** (${session.start} – ${session.end})`);
-    if (term) parts.push(`Term: **${term.name}** (${term.start} – ${term.end})`);
+    if (session) {
+      const sessionRange =
+        'start' in session && 'end' in session && session.start && session.end
+          ? ` (${session.start} – ${session.end})`
+          : '';
+      parts.push(`Session: **${session.name}**${sessionRange}`);
+    }
+    if (term) {
+      const termRange =
+        'start' in term && 'end' in term && term.start && term.end
+          ? ` (${term.start} – ${term.end})`
+          : '';
+      parts.push(`Term: **${term.name}**${termRange}`);
+    }
     if (parts.length) return `Academic calendar:\n${parts.join('\n')}`;
     return 'No current session/term marked active. Set the academic calendar in Settings.';
   }

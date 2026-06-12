@@ -56,7 +56,12 @@ export default function ParentAssignments() {
             setLoading(true);
             try {
                 const studentAssignments = await getStudentAssignments(user.schoolId, selectedParentChildId);
-                setAssignments(studentAssignments);
+                setAssignments(
+                    studentAssignments.map((a) => ({
+                        ...a,
+                        status: (a.submissions?.[0]?.status ?? 'pending') as AssignmentWithSubmission['status'],
+                    }))
+                );
                 console.log('[PARENT_ASSIGNMENTS] Fetched assignments:', studentAssignments);
             } catch (error) {
                 console.error('[PARENT_ASSIGNMENTS] Fetch error:', error);
@@ -115,7 +120,12 @@ export default function ParentAssignments() {
     const refreshAssignments = async () => {
         if (!selectedParentChildId || !user?.schoolId) return;
         const studentAssignments = await getStudentAssignments(user.schoolId, selectedParentChildId);
-        setAssignments(studentAssignments);
+        setAssignments(
+            studentAssignments.map((a) => ({
+                ...a,
+                status: (a.submissions?.[0]?.status ?? 'pending') as AssignmentWithSubmission['status'],
+            }))
+        );
     };
 
     const openSubmitModal = (assignment: AssignmentWithSubmission) => {

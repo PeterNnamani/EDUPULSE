@@ -398,7 +398,7 @@ export const reportCardAnalyticsService = {
                 sessionId: rc.session_id,
                 termId: rc.term_id,
                 averageScore: rc.average_score,
-                trend: 'stable' as const,
+                trend: 'stable' as 'improving' | 'stable' | 'declining',
             }));
 
             // Calculate trends

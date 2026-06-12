@@ -4,8 +4,8 @@ import { useAppStore } from '@/store';
 
 const STORAGE_KEY = 'edupulse_internal_path';
 
-/** Auth routes keep real URLs so /register and /login work on refresh and when deployed. */
-const PUBLIC_AUTH_PATHS = new Set(['/register', '/login']);
+/** Pre-auth routes that may be restored after refresh while logged out. */
+const UNAUTH_RESTORE_PATHS = new Set(['/register', '/login']);
 
 export function clearStoredAppPath() {
   sessionStorage.removeItem(STORAGE_KEY);
@@ -65,15 +65,24 @@ export function RestoreAppPath() {
   const restored = useRef(false);
 
   useEffect(() => {
-    if (restored.current) return;
-    if (!onboardingComplete || !selectedRole || !isAuthenticated) return;
+    if (restored.current || !onboardingComplete) return;
     if (location.pathname !== '/') return;
 
     const stored = sessionStorage.getItem(STORAGE_KEY);
-    if (stored && stored !== '/') {
-      restored.current = true;
-      navigate(stored, { replace: true, mask: '/' });
+    if (!stored || stored === '/') return;
+
+    const storedPathname = stored.split('?')[0].split('#')[0];
+
+    if (isAuthenticated) {
+      if (!selectedRole) return;
+    } else if (!UNAUTH_RESTORE_PATHS.has(storedPathname)) {
+      return;
+    } else if (storedPathname === '/login' && !selectedRole) {
+      return;
     }
+
+    restored.current = true;
+    navigate(stored, { replace: true, mask: '/' });
   }, [isAuthenticated, onboardingComplete, selectedRole, location.pathname, navigate]);
 
   return null;
@@ -84,10 +93,6 @@ export default function CleanUrlBar() {
 
   useEffect(() => {
     const internalPath = `${location.pathname}${location.search}${location.hash}`;
-    if (PUBLIC_AUTH_PATHS.has(location.pathname)) {
-      persistInternalPath(internalPath);
-      return;
-    }
     persistInternalPath(internalPath);
     maskBrowserUrl(location.pathname, location.search, location.hash);
   }, [location.pathname, location.search, location.hash]);

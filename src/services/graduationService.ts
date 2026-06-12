@@ -286,7 +286,20 @@ export const graduationService = {
                 };
             }
 
-            const transcriptData = {
+            const transcriptData: {
+                student: {
+                    name: string;
+                    admissionNumber: string | null;
+                    dateOfBirth: string | null;
+                };
+                graduation: {
+                    date: string | null;
+                    certificateNumber: string | null;
+                    finalGPA: number | null;
+                    qualification: string | null;
+                };
+                academicHistory?: unknown;
+            } = {
                 student: {
                     name: `${student.first_name} ${student.last_name}`,
                     admissionNumber: student.admission_number,

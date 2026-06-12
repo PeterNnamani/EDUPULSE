@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Moon, Sun, Save, Loader2, Eye, Link as LinkIcon, Lock } from 'lucide-react';
+import { Moon, Sun, Save, Loader2, Eye, Link as LinkIcon, Lock, Copy, Check } from 'lucide-react';
+import {
+  getMonnifyWebhookUrl,
+  MONNIFY_LIVE_BASE_URL,
+  MONNIFY_SANDBOX_BASE_URL,
+  resolveMonnifyBaseUrl,
+} from '@/config/monnifyConfig';
+import { MONNIFY_SECRET_MASK } from '@/services/monnifyService';
 import { Link } from 'react-router-dom';
+import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
 import { getRoleSettingsConfig } from '@/config/roleSettingsConfig';
@@ -324,25 +332,7 @@ export default function SettingsPage() {
           )}
 
           {activeTab === 'security' && config.canEditSecurity && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
-              <h2 className="font-semibold mb-6">Security</h2>
-              <p className="text-sm text-secondary-text mb-4">
-                Admin accounts use email and password via Supabase Auth.
-              </p>
-              <div className="space-y-4 max-w-md">
-                <div>
-                  <label className="label mb-1.5 block">Current password</label>
-                  <input type="password" className="input-field" autoComplete="current-password" />
-                </div>
-                <div>
-                  <label className="label mb-1.5 block">New password</label>
-                  <input type="password" className="input-field" autoComplete="new-password" />
-                </div>
-                <button type="button" className="btn-primary">
-                  Update password
-                </button>
-              </div>
-            </motion.div>
+            <SecuritySettings />
           )}
 
           {activeTab === 'appearance' && (
@@ -381,6 +371,120 @@ export default function SettingsPage() {
   );
 }
 
+function SecuritySettings() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const user = useAppStore((s) => s.user);
+
+  const handlePasswordUpdate = async () => {
+    setMessage(null);
+    if (!newPassword || newPassword.length < 8) {
+      setMessage({ type: 'err', text: 'New password must be at least 8 characters.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setMessage({ type: 'err', text: 'New passwords do not match.' });
+      return;
+    }
+    if (!user?.email) {
+      setMessage({ type: 'err', text: 'Password change is only available for email-based admin accounts.' });
+      return;
+    }
+    if (!currentPassword) {
+      setMessage({ type: 'err', text: 'Enter your current password.' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+      if (signInError) {
+        setMessage({ type: 'err', text: 'Current password is incorrect.' });
+        return;
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        setMessage({ type: 'err', text: error.message });
+        return;
+      }
+
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setMessage({ type: 'ok', text: 'Password updated successfully.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card">
+      <h2 className="font-semibold mb-6">Security</h2>
+      <p className="text-sm text-secondary-text mb-4">
+        Admin accounts use email and password via Supabase Auth.
+      </p>
+      <div className="space-y-4 max-w-md">
+        <div>
+          <label className="label mb-1.5 block">Current password</label>
+          <input
+            type="password"
+            className="input-field"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label mb-1.5 block">New password</label>
+          <input
+            type="password"
+            className="input-field"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label mb-1.5 block">Confirm new password</label>
+          <input
+            type="password"
+            className="input-field"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
+        </div>
+        {message && (
+          <p
+            className={`text-sm ${
+              message.type === 'ok'
+                ? 'text-green-700 dark:text-green-300'
+                : 'text-red-600 dark:text-red-400'
+            }`}
+          >
+            {message.text}
+          </p>
+        )}
+        <button
+          type="button"
+          className="btn-primary disabled:opacity-50"
+          disabled={saving}
+          onClick={() => void handlePasswordUpdate()}
+        >
+          {saving ? 'Updating…' : 'Update password'}
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
 function MonnifySettings({ schoolId }: { schoolId: string | null }) {
   const { hasFeature, resolved: planResolved, plan } = useFeatureAccess();
   const [loading, setLoading] = useState(true);
@@ -393,8 +497,16 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
     baseUrl: 'https://api.monnify.com',
     isActive: false,
   });
+  const [webhookCopied, setWebhookCopied] = useState(false);
+  const monnifyWebhookUrl = getMonnifyWebhookUrl();
 
   const canConfigure = planResolved && hasFeature('virtual_accounts');
+
+  const copyWebhookUrl = async () => {
+    await navigator.clipboard.writeText(monnifyWebhookUrl);
+    setWebhookCopied(true);
+    setTimeout(() => setWebhookCopied(false), 2000);
+  };
 
   useEffect(() => {
     if (!schoolId || !canConfigure) {
@@ -408,7 +520,7 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
             apiKey: cfg.apiKey,
             secretKey: cfg.secretKey,
             contractCode: cfg.contractCode,
-            baseUrl: cfg.baseUrl,
+            baseUrl: resolveMonnifyBaseUrl(cfg.apiKey, cfg.baseUrl),
             isActive: cfg.isActive,
           });
         }
@@ -424,11 +536,18 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
     const { monnifyService } = await import('@/services/monnifyService');
     const result = await monnifyService.saveConfig(schoolId, form);
     setSaving(false);
-    setMsg(
-      result.success
-        ? { type: 'ok', text: 'Monnify settings saved.' }
-        : { type: 'err', text: result.error ?? 'Failed to save.' }
-    );
+    if (result.success) {
+      const status = await monnifyService.getSetupStatus(schoolId);
+      const hint =
+        status.state === 'disabled'
+          ? ' Turn on "Enable Monnify" to start generating student accounts.'
+          : status.state === 'ready'
+            ? ' Virtual accounts are ready.'
+            : '';
+      setMsg({ type: 'ok', text: `Monnify settings saved.${hint}` });
+    } else {
+      setMsg({ type: 'err', text: result.error ?? 'Failed to save.' });
+    }
   };
 
   if (!planResolved) {
@@ -490,7 +609,7 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
               className="input-field"
               value={form.secretKey}
               onChange={(e) => setForm({ ...form, secretKey: e.target.value })}
-              placeholder="••••••••"
+              placeholder={MONNIFY_SECRET_MASK}
               autoComplete="off"
               disabled={!canConfigure}
             />
@@ -511,8 +630,12 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
               className="input-field"
               value={form.baseUrl}
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+              placeholder={MONNIFY_LIVE_BASE_URL}
               disabled={!canConfigure}
             />
+            <p className="text-xs text-secondary-text mt-1.5">
+              Live: {MONNIFY_LIVE_BASE_URL} — Sandbox/test keys: {MONNIFY_SANDBOX_BASE_URL}
+            </p>
           </div>
           <div className="flex items-center justify-between p-4 rounded-xl bg-secondary-bg dark:bg-dark-card">
             <div>
@@ -532,9 +655,29 @@ function MonnifySettings({ schoolId }: { schoolId: string | null }) {
               <div className="w-11 h-6 bg-gray-200 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black peer-disabled:opacity-50" />
             </label>
           </div>
-          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-800 dark:text-blue-200">
-            Set your Monnify webhook URL to:{' '}
-            <code className="break-all">{`${import.meta.env.VITE_SUPABASE_URL ?? '<SUPABASE_URL>'}/functions/v1/monnify-webhook`}</code>
+          <div className="p-4 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-sm text-blue-900 dark:text-blue-100">
+            <p className="font-medium mb-1">Monnify webhook URL</p>
+            <p className="text-xs text-blue-800/90 dark:text-blue-200/90 mb-3">
+              In Monnify → Settings → Webhooks, paste this URL so transfer notifications
+              reconcile automatically.
+            </p>
+            <div className="flex items-start gap-2">
+              <code className="flex-1 text-xs break-all bg-white/70 dark:bg-black/20 rounded-lg px-3 py-2">
+                {monnifyWebhookUrl}
+              </code>
+              <button
+                type="button"
+                onClick={copyWebhookUrl}
+                className="shrink-0 p-2 rounded-lg bg-white/70 dark:bg-black/20 hover:bg-white dark:hover:bg-black/40 transition-colors"
+                title="Copy webhook URL"
+              >
+                {webhookCopied ? (
+                  <Check className="w-4 h-4 text-green-600" />
+                ) : (
+                  <Copy className="w-4 h-4" />
+                )}
+              </button>
+            </div>
           </div>
           {msg && (
             <div

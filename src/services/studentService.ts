@@ -1,6 +1,22 @@
 import { supabase } from '@/lib/supabase';
+import type { StudentStatus } from '@/types';
 import { normalizePhone, comparePhones, extractParentPhones, validatePhone } from '@/utils/phoneUtils';
 import { generateStudentId, getNextStudentSequence } from '@/utils/schoolIdUtils';
+
+export const STUDENT_STATUSES: StudentStatus[] = [
+    'active',
+    'graduated',
+    'withdrawn',
+    'suspended',
+    'transferred',
+];
+
+/** Map legacy/UI values to DB-allowed student status. */
+export function normalizeStudentStatus(status: string): StudentStatus | null {
+    const value = status.trim().toLowerCase();
+    if (value === 'inactive') return 'withdrawn';
+    return STUDENT_STATUSES.includes(value as StudentStatus) ? (value as StudentStatus) : null;
+}
 
 interface CreateStudentRequest {
     schoolId: string;
@@ -29,10 +45,17 @@ interface CreateStudentRequest {
 interface CreateStudentResponse {
     success: boolean;
     data?: {
+        id: string;
         studentId: string;
         firstName: string;
         lastName: string;
         parentId?: string;
+        virtualAccount?: {
+            accountNumber: string | null;
+            accountName: string | null;
+            bankName: string | null;
+        };
+        virtualAccountError?: string;
     };
     error?: string;
 }
@@ -341,25 +364,54 @@ export async function createStudentWithParent(
             'registration'
         );
 
-        // Reserve a Monnify virtual account if the school has configured Monnify.
-        void (async () => {
-            try {
-                const { monnifyService } = await import('@/services/monnifyService');
+        let virtualAccount:
+            | {
+                  accountNumber: string | null;
+                  accountName: string | null;
+                  bankName: string | null;
+              }
+            | undefined;
+        let virtualAccountError: string | undefined;
+
+        try {
+            const { schoolHasFeature } = await import('@/services/subscriptionService');
+            const { monnifyService } = await import('@/services/monnifyService');
+            if (await schoolHasFeature(request.schoolId, 'virtual_accounts')) {
                 if (await monnifyService.isConfigured(request.schoolId)) {
-                    await monnifyService.ensureVirtualAccount(request.schoolId, newStudent.id);
+                    const vaResult = await monnifyService.ensureVirtualAccount(
+                        request.schoolId,
+                        newStudent.id
+                    );
+                    if (vaResult.success && vaResult.account?.accountNumber) {
+                        virtualAccount = {
+                            accountNumber: vaResult.account.accountNumber,
+                            accountName: vaResult.account.accountName,
+                            bankName: vaResult.account.bankName,
+                        };
+                    } else if (!vaResult.success) {
+                        virtualAccountError = vaResult.error;
+                    } else {
+                        virtualAccountError =
+                            'Virtual account could not be retrieved. Check Monnify settings and try again from the student profile.';
+                    }
                 }
-            } catch (e) {
-                console.warn('[STUDENT] virtual account reservation skipped:', e);
             }
-        })();
+        } catch (e) {
+            console.warn('[STUDENT] virtual account reservation failed:', e);
+            virtualAccountError =
+                e instanceof Error ? e.message : 'Could not create virtual account';
+        }
 
         return {
             success: true,
             data: {
+                id: newStudent.id,
                 studentId: studentId,
                 firstName: request.firstName,
                 lastName: request.lastName,
                 parentId: parentId,
+                virtualAccount,
+                virtualAccountError,
             },
         };
     } catch (error) {
@@ -524,7 +576,17 @@ export async function updateStudent(
         if (updates.gender) updateData.gender = updates.gender;
         if (updates.dateOfBirth) updateData.date_of_birth = updates.dateOfBirth;
         if (updates.classId) updateData.class_id = updates.classId;
-        if (updates.status) updateData.status = updates.status;
+        if (updates.status) {
+            const normalizedStatus = normalizeStudentStatus(updates.status);
+            if (!normalizedStatus) {
+                return {
+                    success: false,
+                    error:
+                        'Invalid student status. Use active, graduated, withdrawn, suspended, or transferred.',
+                };
+            }
+            updateData.status = normalizedStatus;
+        }
 
         const { error } = await supabase
             .from('students')
@@ -533,13 +595,17 @@ export async function updateStudent(
 
         if (error) {
             console.error('Error updating student:', error);
+            const constraintMsg =
+                error.code === '23514'
+                    ? 'Invalid student status. Use active, graduated, withdrawn, suspended, or transferred.'
+                    : undefined;
             return {
                 success: false,
-                error: error.message || 'Failed to update student',
+                error: constraintMsg || error.message || 'Failed to update student',
             };
         }
 
-        if (updates.firstName || updates.lastName) {
+        if (updates.firstName || updates.lastName || updates.middleName) {
             const { data: studentRow } = await supabase
                 .from('students')
                 .select('school_id')
@@ -597,3 +663,27 @@ export async function updateStudent(
         };
     }
 }
+
+/** Fetch a single student by internal UUID. */
+export async function getStudent(studentId: string) {
+    const { data, error } = await supabase
+        .from('students')
+        .select(
+            'id, student_id, first_name, last_name, middle_name, gender, date_of_birth, class_id, status, admission_number, state_of_origin, school_id'
+        )
+        .eq('id', studentId)
+        .maybeSingle();
+
+    return { data, error };
+}
+
+export const studentService = {
+    getStudent,
+    getStudents,
+    createStudentWithParent,
+    updateStudent,
+    getChildrenByParentPhone,
+    checkStudentLimit,
+    normalizeStudentStatus,
+    STUDENT_STATUSES,
+};

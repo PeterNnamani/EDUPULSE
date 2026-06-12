@@ -187,7 +187,7 @@ export default function AssignmentsPage() {
         subjectId: formData.subjectId,
         dueDate: formData.dueDate,
         totalMarks: formData.totalMarks,
-        assignmentType: formData.assignmentType,
+        assignmentType: formData.assignmentType as 'assignment' | 'homework' | 'project' | 'test',
         description: formData.description,
         teacherId: user.id,
         academicTermId: currentTerm || undefined,

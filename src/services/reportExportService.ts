@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import { getTeacherTeachingLoad } from '@/services/classService';
-import { unwrapJoin } from '@/utils/displayUtils';
+import { unwrapJoinUnknown } from '@/utils/displayUtils';
 import type { UserRole } from '@/types';
 
 export type ReportCategory =
@@ -28,14 +28,14 @@ export interface ReportExportOptions {
 export type ReportClassScope = string[] | undefined;
 
 function joinedStudentName(students: unknown): string {
-  const student = unwrapJoin<{ first_name?: string; last_name?: string }>(students);
+  const student = unwrapJoinUnknown<{ first_name?: string; last_name?: string }>(students);
   if (!student) return 'Unknown';
   const name = `${student.first_name ?? ''} ${student.last_name ?? ''}`.trim();
   return name || 'Unknown';
 }
 
 function joinedField(value: unknown, field: string, fallback = 'N/A'): string {
-  const row = unwrapJoin<Record<string, string | null | undefined>>(value);
+  const row = unwrapJoinUnknown<Record<string, string | null | undefined>>(value);
   const text = row?.[field];
   return text != null && String(text).trim() !== '' ? String(text) : fallback;
 }

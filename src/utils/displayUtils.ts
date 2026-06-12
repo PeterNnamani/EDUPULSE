@@ -27,10 +27,31 @@ export function safeFullName(first?: string | null, last?: string | null, fallba
   return name || fallback;
 }
 
+/** Student legal name: first, optional middle, last. */
+export function formatStudentFullName(
+  first?: string | null,
+  middle?: string | null,
+  last?: string | null,
+  fallback = 'Student'
+): string {
+  const name = [first, middle, last]
+    .map((part) => (part ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+  return name || fallback;
+}
+
 /** Supabase embedded joins may return an object or a one-element array. */
 export function unwrapJoin<T>(value: T | T[] | null | undefined): T | null {
   if (value == null) return null;
   return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+/** Same as unwrapJoin but accepts untyped Supabase embed payloads. */
+export function unwrapJoinUnknown<T>(value: unknown): T | null {
+  if (value == null) return null;
+  if (Array.isArray(value)) return (value[0] ?? null) as T | null;
+  return value as T;
 }
 
 /** Format a number safely; returns `fallback` for null/undefined/NaN. */
@@ -69,6 +90,19 @@ export function formatDateTime(
   if (value === null || value === undefined || value === '') return fallback;
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? fallback : d.toLocaleString();
+}
+
+/** Human-readable class label from grade level and optional section. */
+export function formatClassLabel(
+  gradeLevel?: string | null,
+  section?: string | null,
+  fallbackName?: string | null
+): string {
+  const grade = gradeLevel?.trim();
+  if (!grade) return fallbackName?.trim() || 'Class';
+  const sec = section?.trim();
+  if (!sec) return grade;
+  return `${grade} — Section ${sec}`;
 }
 
 /** Format a time safely. */
