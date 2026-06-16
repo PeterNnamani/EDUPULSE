@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { computeFeeMetrics } from './feeMetricsService';
+import { formatClassDisplay } from '@/utils/displayUtils';
 
 function pct(numerator: number, denominator: number): number {
   if (denominator <= 0) return 0;
@@ -107,7 +108,7 @@ export interface ClassPerformancePoint {
 
 export async function fetchClassPerformanceChart(schoolId: string): Promise<ClassPerformancePoint[]> {
   const [{ data: classes }, { data: grades }] = await Promise.all([
-    supabase.from('classes').select('id, name').eq('school_id', schoolId).eq('is_active', true),
+    supabase.from('classes').select('id, name, grade_level, section').eq('school_id', schoolId).eq('is_active', true),
     supabase.from('grades').select('class_id, score, max_score').eq('school_id', schoolId),
   ]);
 
@@ -116,10 +117,10 @@ export async function fetchClassPerformanceChart(schoolId: string): Promise<Clas
   return classes
     .map((cls) => {
       const classGrades = (grades ?? []).filter((g) => g.class_id === cls.id);
-      if (!classGrades.length) return { class: cls.name, average: 0 };
+      if (!classGrades.length) return { class: formatClassDisplay(cls), average: 0 };
       const avg =
         classGrades.reduce((sum, g) => sum + gradePercent(g.score, g.max_score), 0) / classGrades.length;
-      return { class: cls.name, average: Math.round(avg) };
+      return { class: formatClassDisplay(cls), average: Math.round(avg) };
     })
     .filter((p) => p.average > 0)
     .sort((a, b) => b.average - a.average)

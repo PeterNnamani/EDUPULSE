@@ -7,11 +7,13 @@ import { getCurrentSession } from '@/utils/calendarUtils';
 import { syncAllStudentsAcademicRecords } from '@/services/academicRecordService';
 import { promotionEngine } from '@/services/promotionEngine';
 import { graduationService } from '@/services/graduationService';
+import { formatClassDisplay } from '@/utils/displayUtils';
 
 interface ClassRow {
   id: string;
   name: string;
   grade_level?: string;
+  section?: string | null;
 }
 
 interface StudentRow {
@@ -49,7 +51,7 @@ export default function AcademicLifecyclePage() {
       setSessionId(session?.id ?? null);
 
       const [{ data: cls }, { data: studs }] = await Promise.all([
-        supabase.from('classes').select('id, name, grade_level').eq('school_id', schoolId).eq('is_active', true).order('name'),
+        supabase.from('classes').select('id, name, grade_level, section').eq('school_id', schoolId).eq('is_active', true).order('name'),
         supabase
           .from('students')
           .select('id, first_name, last_name, class_id')
@@ -57,7 +59,12 @@ export default function AcademicLifecyclePage() {
           .eq('status', 'active')
           .order('last_name'),
       ]);
-      setClasses(cls ?? []);
+      setClasses(
+        (cls ?? []).map((c) => ({
+          ...c,
+          name: formatClassDisplay(c),
+        }))
+      );
       setStudents(studs ?? []);
     } finally {
       setLoading(false);

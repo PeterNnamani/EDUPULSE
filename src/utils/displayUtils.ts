@@ -105,6 +105,33 @@ export function formatClassLabel(
   return `${grade} — Section ${sec}`;
 }
 
+export interface ClassDisplayFields {
+  name?: string | null;
+  gradeLevel?: string | null;
+  grade_level?: string | null;
+  section?: string | null;
+}
+
+/** Full display name for a class row (prefers grade + section over abbreviated name). */
+export function formatClassDisplay(
+  cls: ClassDisplayFields | null | undefined,
+  fallback = 'Class'
+): string {
+  if (!cls) return fallback;
+  return formatClassLabel(
+    cls.gradeLevel ?? cls.grade_level,
+    cls.section,
+    cls.name,
+  );
+}
+
+/** Map class id → formatted display label. */
+export function buildClassDisplayMap(
+  classes: Array<ClassDisplayFields & { id: string }>
+): Map<string, string> {
+  return new Map(classes.map((c) => [c.id, formatClassDisplay(c)]));
+}
+
 /** Format a time safely. */
 export function formatTime(
   value: string | number | Date | null | undefined,

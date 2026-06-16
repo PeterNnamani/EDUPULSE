@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { StudentStatus } from '@/types';
+import { formatClassDisplay } from '@/utils/displayUtils';
 import { normalizePhone, comparePhones, extractParentPhones, validatePhone } from '@/utils/phoneUtils';
 import { generateStudentId, getNextStudentSequence } from '@/utils/schoolIdUtils';
 
@@ -329,7 +330,7 @@ export async function createStudentWithParent(
 
         const { data: classRow } = await supabase
             .from('classes')
-            .select('name')
+            .select('name, grade_level, section')
             .eq('id', request.classId)
             .eq('school_id', request.schoolId)
             .maybeSingle();
@@ -339,7 +340,7 @@ export async function createStudentWithParent(
             request.schoolId,
             `${request.firstName} ${request.lastName}`,
             request.classId,
-            classRow?.name ?? 'Class'
+            classRow ? formatClassDisplay(classRow) : 'Class'
         );
 
         const { auditService } = await import('@/services/auditService');

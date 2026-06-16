@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { getTeacherClasses } from '@/services/classService';
 import { getTeacherAssignments } from '@/services/assignmentService';
+import { buildClassDisplayMap, formatClassDisplay } from '@/utils/displayUtils';
 import type { UserRole } from '@/types';
 
 export interface ChatAccountContext {
@@ -207,11 +208,11 @@ async function fetchCurriculumSnapshot(
   }
 
   const teachingLoad: TeachingLoadEntry[] = rows.map((row) => {
-    const cls = row.classes as { name?: string; grade_level?: string } | null;
+    const cls = row.classes as { name?: string; grade_level?: string; section?: string | null } | null;
     const sub = row.subjects as { name?: string; code?: string; curriculum_type?: string } | null;
     const staff = row.staff as { full_name?: string } | null;
     return {
-      className: cls?.name ?? 'Class',
+      className: formatClassDisplay(cls),
       gradeLevel: cls?.grade_level ?? '',
       subjectName: sub?.name ?? 'Subject',
       subjectCode: sub?.code ?? null,
@@ -390,7 +391,7 @@ export async function fetchTodayAttendanceSnapshot(
 
   let classQuery = supabase
     .from('classes')
-    .select('id, name')
+    .select('id, name, grade_level, section')
     .eq('school_id', schoolId)
     .eq('is_active', true)
     .order('name');
@@ -400,7 +401,7 @@ export async function fetchTodayAttendanceSnapshot(
   }
 
   const { data: classes } = await classQuery;
-  const classMap = new Map((classes ?? []).map((c) => [c.id, c.name]));
+  const classMap = buildClassDisplayMap(classes ?? []);
   const classIds = [...classMap.keys()];
 
   const empty: TodayAttendanceSnapshot = {
@@ -676,7 +677,7 @@ export async function fetchSchoolOverview(schoolId: string): Promise<SchoolOverv
       .order('full_name'),
     supabase
       .from('classes')
-      .select('id, name')
+      .select('id, name, grade_level, section')
       .eq('school_id', schoolId)
       .eq('is_active', true)
       .order('name'),

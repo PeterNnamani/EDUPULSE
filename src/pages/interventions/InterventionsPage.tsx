@@ -5,7 +5,7 @@ import { Plus, Calendar, User, CheckCircle, Clock, AlertTriangle, MessageSquare,
 import { useAppStore } from '@/store';
 import { interventionService } from '@/services/interventionService';
 import { supabase } from '@/lib/supabase';
-import { getInitialsFromName } from '@/utils/displayUtils';
+import { getInitialsFromName, buildClassDisplayMap, formatClassDisplay } from '@/utils/displayUtils';
 
 interface InterventionData {
   id: string;
@@ -93,10 +93,10 @@ export default function InterventionsPage() {
         // Get all classes
         const { data: classes } = await supabase
           .from('classes')
-          .select('id, name')
+          .select('id, name, grade_level, section')
           .eq('school_id', user!.schoolId);
 
-        const classMap = new Map(classes?.map((c) => [c.id, c.name]) || []);
+        const classMap = buildClassDisplayMap(classes ?? []);
 
         // Map students with class names
         const studentOptions: StudentOption[] = students.map(s => ({
@@ -167,11 +167,11 @@ export default function InterventionsPage() {
             if (student?.class_id) {
               const { data: classData } = await supabase
                 .from('classes')
-                .select('name')
+                .select('name, grade_level, section')
                 .eq('id', student.class_id)
                 .eq('school_id', user!.schoolId)
                 .single();
-              className = classData?.name || 'N/A';
+              className = classData ? formatClassDisplay(classData) : 'N/A';
             }
 
             // assigned_to_id references staff.id (legacy rows may still use auth user_id)

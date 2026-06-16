@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { formatClassDisplay } from '@/utils/displayUtils';
 
 /**
  * TEACHER ACTIVITY SERVICE
@@ -216,7 +217,7 @@ export const teacherActivityService = {
     const [{ data: classes }, { data: attendance }] = await Promise.all([
       supabase
         .from('classes')
-        .select('id, name, class_teacher_id, is_active')
+        .select('id, name, grade_level, section, class_teacher_id, is_active')
         .eq('school_id', schoolId)
         .eq('is_active', true),
       supabase.from('attendance').select('class_id').eq('school_id', schoolId).eq('date', today),
@@ -240,7 +241,7 @@ export const teacherActivityService = {
       .filter((c) => !markedClasses.has(c.id))
       .map((c) => ({
         classId: c.id,
-        className: c.name,
+        className: formatClassDisplay(c),
         teacherId: c.class_teacher_id ?? null,
         teacherName: c.class_teacher_id ? teacherNameMap.get(c.class_teacher_id) ?? 'Unassigned' : 'Unassigned',
       }));

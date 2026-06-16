@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { buildClassDisplayMap, formatClassDisplay } from '@/utils/displayUtils';
 
 export interface FeeMetrics {
   totalExpected: number;
@@ -72,7 +73,7 @@ export async function fetchOutstandingByClass(
 ): Promise<ClassOutstanding[]> {
   const [{ data: students }, { data: classes }, { data: fees }, { data: payments }] = await Promise.all([
     supabase.from('students').select('id, class_id').eq('school_id', schoolId).eq('status', 'active'),
-    supabase.from('classes').select('id, name').eq('school_id', schoolId),
+    supabase.from('classes').select('id, name, grade_level, section').eq('school_id', schoolId),
     supabase.from('fees').select('class_id, amount').eq('school_id', schoolId).eq('is_active', true),
     supabase
       .from('payments')
@@ -87,7 +88,7 @@ export async function fetchOutstandingByClass(
     paidByStudent.set(p.student_id, (paidByStudent.get(p.student_id) ?? 0) + Number(p.amount ?? 0));
   }
 
-  const classMap = new Map((classes ?? []).map((c) => [c.id, c.name]));
+  const classMap = buildClassDisplayMap(classes ?? []);
   const byClass = new Map<string, { amount: number; students: number }>();
 
   for (const s of students ?? []) {

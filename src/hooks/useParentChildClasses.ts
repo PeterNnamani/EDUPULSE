@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
+import { formatClassDisplay } from '@/utils/displayUtils';
 
 /** Resolves class names for all of the parent's children (cached per child id). */
 export function useParentChildClasses(): Record<string, string> {
@@ -31,10 +32,12 @@ export function useParentChildClasses(): Record<string, string> {
       if (classIdsToFetch.size > 0) {
         const { data } = await supabase
           .from('classes')
-          .select('id, name')
+          .select('id, name, grade_level, section')
           .in('id', [...classIdsToFetch]);
 
-        const byClassId = Object.fromEntries((data ?? []).map((c) => [c.id, c.name]));
+        const byClassId = Object.fromEntries(
+          (data ?? []).map((c) => [c.id, formatClassDisplay(c)])
+        );
 
         for (const child of children) {
           if (!resolved[child.id] && child.classId && byClassId[child.classId]) {

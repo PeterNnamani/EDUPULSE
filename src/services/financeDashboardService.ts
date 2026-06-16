@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { buildClassDisplayMap } from '@/utils/displayUtils';
 import {
   computeFeeMetrics,
   fetchMonthlyCollections,
@@ -65,12 +66,12 @@ export async function fetchFinanceDashboard(
         .from('students')
         .select('id, first_name, last_name, class_id')
         .eq('school_id', schoolId),
-      supabase.from('classes').select('id, name').eq('school_id', schoolId),
+      supabase.from('classes').select('id, name, grade_level, section').eq('school_id', schoolId),
     ]);
 
   const payments = paymentsRes.data ?? [];
   const studentMap = new Map((studentsRes.data ?? []).map((s) => [s.id, s]));
-  const classMap = new Map((classesRes.data ?? []).map((c) => [c.id, c.name]));
+  const classMap = buildClassDisplayMap(classesRes.data ?? []);
 
   const todayPayments = payments.filter((p) => {
     const raw = p.paid_at ?? p.created_at;

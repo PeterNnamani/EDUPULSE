@@ -5,7 +5,7 @@ import { useAppStore } from '@/store';
 import { createStaff, updateStaff } from '@/services/authService';
 import { notificationTriggerService } from '@/services/notificationTriggerService';
 import { supabase } from '@/lib/supabase';
-import { getInitialsFromName, unwrapJoin } from '@/utils/displayUtils';
+import { getInitialsFromName, formatClassDisplay, unwrapJoin } from '@/utils/displayUtils';
 import StaffTeachingAssignments from '@/components/admin/StaffTeachingAssignments';
 import { buildStaffTeachingMap } from '@/utils/staffTeachingMap';
 
@@ -26,6 +26,7 @@ interface Class {
   id: string;
   name: string;
   grade_level: string;
+  section?: string | null;
   class_teacher_id: string | null;
   class_teacher_name?: string;
 }
@@ -142,6 +143,7 @@ export default function StaffManagement() {
           id,
           name,
           grade_level,
+          section,
           class_teacher_id,
           staff!class_teacher_id(full_name)
         `)
@@ -155,6 +157,7 @@ export default function StaffManagement() {
         id: cls.id,
         name: cls.name,
         grade_level: cls.grade_level,
+        section: cls.section,
         class_teacher_id: cls.class_teacher_id,
         class_teacher_name: unwrapJoin<{ full_name?: string }>(cls.staff)?.full_name,
       }));
@@ -1048,7 +1051,7 @@ export default function StaffManagement() {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-xs truncate">{cls.name}</p>
+                          <p className="font-medium text-xs truncate">{formatClassDisplay(cls)}</p>
                         </div>
                       </div>
                     </div>

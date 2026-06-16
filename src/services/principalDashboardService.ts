@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { formatClassDisplay } from '@/utils/displayUtils';
 
 export interface PrincipalKeyMetrics {
   totalStudents: number;
@@ -259,7 +260,7 @@ async function fetchMonthlyTrends(schoolId: string): Promise<MonthlyTrendPoint[]
 
 async function fetchClassRankings(schoolId: string): Promise<ClassRanking[]> {
   const [{ data: classes }, { data: students }, { data: grades }] = await Promise.all([
-    supabase.from('classes').select('id, name').eq('school_id', schoolId).eq('is_active', true),
+    supabase.from('classes').select('id, name, grade_level, section').eq('school_id', schoolId).eq('is_active', true),
     supabase.from('students').select('id, class_id').eq('school_id', schoolId).eq('status', 'active'),
     supabase.from('grades').select('class_id, score, max_score').eq('school_id', schoolId),
   ]);
@@ -284,7 +285,7 @@ async function fetchClassRankings(schoolId: string): Promise<ClassRanking[]> {
       ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
       : 0;
     return {
-      class: c.name,
+      class: formatClassDisplay(c),
       average,
       students: studentCountByClass.get(c.id) ?? 0,
     };

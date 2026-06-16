@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '@/store';
 import { interventionService, type InterventionStatus } from '@/services/interventionService';
 import { supabase } from '@/lib/supabase';
-import { formatDate } from '@/utils/displayUtils';
+import { formatDate, formatClassDisplay } from '@/utils/displayUtils';
 
 interface CaseWithStudent {
   id: string;
@@ -73,11 +73,11 @@ export default function CounselorDashboard() {
             if (student?.class_id) {
               const { data: classData } = await supabase
                 .from('classes')
-                .select('name')
+                .select('name, grade_level, section')
                 .eq('id', student.class_id)
                 .eq('school_id', user!.schoolId)
                 .single();
-              className = classData?.name || 'N/A';
+              className = classData ? formatClassDisplay(classData) : 'N/A';
             }
 
             // Calculate days open

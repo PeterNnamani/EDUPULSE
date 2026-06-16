@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { buildClassDisplayMap } from '@/utils/displayUtils';
 
 /**
  * RECONCILIATION SERVICE
@@ -128,9 +129,9 @@ export const reconciliationService = {
       .in('id', ids);
     const classIds = [...new Set((students ?? []).map((s) => s.class_id).filter(Boolean))];
     const { data: classes } = classIds.length
-      ? await supabase.from('classes').select('id, name').in('id', classIds as string[])
-      : { data: [] as Array<{ id: string; name: string }> };
-    const classMap = new Map((classes ?? []).map((c) => [c.id, c.name]));
+      ? await supabase.from('classes').select('id, name, grade_level, section').in('id', classIds as string[])
+      : { data: [] as Array<{ id: string; name: string; grade_level?: string; section?: string | null }> };
+    const classMap = buildClassDisplayMap(classes ?? []);
 
     const rows: OutstandingRow[] = (students ?? []).map((s) => {
       const agg = byStudent.get(s.id)!;

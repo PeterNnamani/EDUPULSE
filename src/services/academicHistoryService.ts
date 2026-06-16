@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { unwrapJoin } from '@/utils/displayUtils';
+import { unwrapJoin, formatClassDisplay } from '@/utils/displayUtils';
 
 /**
  * Academic History Service
@@ -226,7 +226,7 @@ export const academicHistoryService = {
                 );
                 return {
                     session: session?.name,
-                    class: cls ? `${cls.grade_level ?? ''}${cls.section ?? ''}` : '',
+                    class: cls ? formatClassDisplay(cls) : '',
                     status: record.promotion_status,
                 };
             }) || [];

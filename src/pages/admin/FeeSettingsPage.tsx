@@ -10,6 +10,7 @@ import {
   syncClassTuitionFee,
   refreshClassTuitionFromStructures,
 } from '@/services/classTuitionService';
+import { buildClassDisplayMap, formatClassDisplay } from '@/utils/displayUtils';
 
 interface FeeStructureRow {
     id: string;
@@ -76,7 +77,7 @@ export default function FeeSettingsPage() {
             const [{ data: cls }, { data: ft }] = await Promise.all([
                 supabase
                     .from('classes')
-                    .select('id, name')
+                    .select('id, name, grade_level, section')
                     .eq('school_id', schoolId)
                     .eq('is_active', true)
                     .order('name'),
@@ -84,7 +85,9 @@ export default function FeeSettingsPage() {
             ]);
             const classesData = cls ?? [];
             const feeTypesData = ft ?? [];
-            setClasses(classesData);
+            setClasses(
+              classesData.map((c) => ({ id: c.id, name: formatClassDisplay(c) }))
+            );
             setFeeTypes(feeTypesData);
 
             const { data: structRaw } = await supabase
@@ -94,7 +97,7 @@ export default function FeeSettingsPage() {
                 .eq('is_active', true)
                 .order('class_id');
 
-            const classMap = new Map(classesData.map((c) => [c.id, c.name]));
+            const classMap = buildClassDisplayMap(classesData);
             const ftMap = new Map(feeTypesData.map((t) => [t.id, t.name]));
 
             setStructures(

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { buildClassDisplayMap } from '@/utils/displayUtils';
 
 export interface RecordPaymentRequest {
   schoolId: string;
@@ -31,7 +32,7 @@ export async function fetchStudentsForPayment(schoolId: string): Promise<Student
       .eq('school_id', schoolId)
       .eq('status', 'active')
       .order('last_name'),
-    supabase.from('classes').select('id, name').eq('school_id', schoolId),
+    supabase.from('classes').select('id, name, grade_level, section').eq('school_id', schoolId),
     supabase.from('fees').select('id, class_id, amount').eq('school_id', schoolId).eq('is_active', true),
     supabase
       .from('payments')
@@ -40,7 +41,7 @@ export async function fetchStudentsForPayment(schoolId: string): Promise<Student
       .eq('status', 'completed'),
   ]);
 
-  const classMap = new Map((classes ?? []).map((c) => [c.id, c.name]));
+  const classMap = buildClassDisplayMap(classes ?? []);
 
   return (students ?? []).map((s) => {
     const classFee = (fees ?? []).find((f) => f.class_id === s.class_id);

@@ -1,9 +1,11 @@
 import type { StaffTeachingProfile } from '@/components/admin/StaffTeachingAssignments';
+import { formatClassDisplay } from '@/utils/displayUtils';
 
 interface ClassRow {
   id: string;
   name: string;
   grade_level?: string;
+  section?: string | null;
   class_teacher_id: string | null;
 }
 
@@ -11,7 +13,7 @@ interface ClassSubjectRow {
   teacher_id: string | null;
   class_id: string;
   subject_id: string;
-  classes?: { id: string; name: string; grade_level?: string } | null;
+  classes?: { id: string; name: string; grade_level?: string; section?: string | null } | null;
   subjects?: { id: string; name: string } | null;
 }
 
@@ -31,14 +33,23 @@ export function buildStaffTeachingMap(
     return map[staffId];
   };
 
-  const ensureClass = (staffId: string, classId: string, className: string, gradeLevel?: string, isFormTeacher = false) => {
+  const ensureClass = (
+    staffId: string,
+    classId: string,
+    className: string,
+    gradeLevel?: string,
+    section?: string | null,
+    isFormTeacher = false
+  ) => {
     const profile = ensureStaff(staffId);
     let entry = profile.classes.find((c) => c.classId === classId);
+    const displayName = formatClassDisplay({ name: className, grade_level: gradeLevel, section });
     if (!entry) {
       entry = {
         classId,
-        className,
+        className: displayName,
         gradeLevel,
+        section: section ?? undefined,
         isFormTeacher,
         subjects: [],
       };
@@ -51,7 +62,14 @@ export function buildStaffTeachingMap(
 
   for (const cls of classes) {
     if (cls.class_teacher_id) {
-      ensureClass(cls.class_teacher_id, cls.id, cls.name, cls.grade_level, true);
+      ensureClass(
+        cls.class_teacher_id,
+        cls.id,
+        cls.name,
+        cls.grade_level,
+        cls.section,
+        true
+      );
     }
   }
 
@@ -61,7 +79,14 @@ export function buildStaffTeachingMap(
     const sub = row.subjects;
     if (!cls || !sub) continue;
 
-    const entry = ensureClass(row.teacher_id, cls.id, cls.name, cls.grade_level, false);
+    const entry = ensureClass(
+      row.teacher_id,
+      cls.id,
+      cls.name,
+      cls.grade_level,
+      cls.section,
+      false
+    );
     if (!entry.subjects.some((s) => s.id === sub.id)) {
       entry.subjects.push({ id: sub.id, name: sub.name });
     }

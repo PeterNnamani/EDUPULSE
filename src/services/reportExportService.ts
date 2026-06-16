@@ -2,7 +2,7 @@ import { supabase } from '@/lib/supabase';
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
 import { getTeacherTeachingLoad } from '@/services/classService';
-import { unwrapJoinUnknown } from '@/utils/displayUtils';
+import { unwrapJoinUnknown, buildClassDisplayMap, formatClassDisplay } from '@/utils/displayUtils';
 import type { UserRole } from '@/types';
 
 export type ReportCategory =
@@ -208,11 +208,11 @@ async function fetchReportRows(
 
       const { data: classes } = await supabase
         .from('classes')
-        .select('id, name')
+        .select('id, name, grade_level, section')
         .eq('school_id', schoolId);
 
       const studentMap = new Map((students ?? []).map((s) => [s.id, s]));
-      const classMap = new Map((classes ?? []).map((c) => [c.id, c.name]));
+      const classMap = buildClassDisplayMap(classes ?? []);
 
       const rows = (riskScores ?? []).map((r) => {
         const student = studentMap.get(r.student_id);
@@ -283,10 +283,10 @@ async function fetchReportRows(
         ...new Set((students ?? []).map((s) => s.class_id).filter(Boolean)),
       ] as string[];
       const { data: classes } = studentClassIds.length
-        ? await supabase.from('classes').select('id, name').in('id', studentClassIds)
+        ? await supabase.from('classes').select('id, name, grade_level, section').in('id', studentClassIds)
         : { data: [] };
 
-      const classMap = new Map((classes ?? []).map((c) => [c.id, c.name]));
+      const classMap = buildClassDisplayMap(classes ?? []);
 
       const rows = (students ?? []).map((s) => ({
         'Student ID': s.id,

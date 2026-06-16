@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Clock, LogIn, LogOut, Loader, Search, UserCheck, AlertTriangle, ChevronDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/store';
+import { buildClassDisplayMap } from '@/utils/displayUtils';
 import {
   dutyAttendanceService,
   DutyAttendanceRow,
@@ -58,12 +59,12 @@ export default function DutyAttendancePage() {
         .eq('school_id', schoolId)
         .eq('status', 'active')
         .order('last_name'),
-      supabase.from('classes').select('id, name').eq('school_id', schoolId),
+      supabase.from('classes').select('id, name, grade_level, section').eq('school_id', schoolId),
       dutyAttendanceService.getAttendanceForDate(schoolId, date),
       dutyAttendanceService.getDashboardMetrics(schoolId, date),
     ]);
 
-    const classMap = new Map((classes ?? []).map((c) => [c.id, c.name]));
+    const classMap = buildClassDisplayMap(classes ?? []);
     setStudents(
       (studentRows ?? []).map((s) => ({
         id: s.id,

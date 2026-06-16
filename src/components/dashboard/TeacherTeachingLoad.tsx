@@ -7,6 +7,7 @@ import {
     type TeacherClassLoad,
     type TeacherSubjectSlot,
 } from '@/services/classService';
+import { formatClassDisplay } from '@/utils/displayUtils';
 
 const SUBJECT_COLORS = [
     'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
@@ -49,17 +50,14 @@ function SubjectChips({ subjects, size = 'md' }: { subjects: TeacherSubjectSlot[
 }
 
 function ClassCard({ entry, index, compact }: { entry: TeacherClassLoad; index: number; compact?: boolean }) {
-    const gradeLabel = [entry.gradeLevel, entry.section].filter(Boolean).join(' · ');
+    const displayName = formatClassDisplay(entry);
 
     if (compact) {
         return (
             <div className="p-3 rounded-xl bg-secondary-bg/80 dark:bg-dark-card border border-border dark:border-gray-800">
                 <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="min-w-0">
-                        <p className="font-semibold text-sm truncate">{entry.className}</p>
-                        {gradeLabel && (
-                            <p className="text-[11px] text-secondary-text truncate">{gradeLabel}</p>
-                        )}
+                        <p className="font-semibold text-sm truncate">{displayName}</p>
                     </div>
                     {entry.isFormTeacher && (
                         <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
@@ -88,10 +86,7 @@ function ClassCard({ entry, index, compact }: { entry: TeacherClassLoad; index: 
                         <GraduationCap className="w-5 h-5 text-white dark:text-slate-900" />
                     </div>
                     <div className="min-w-0">
-                        <h4 className="font-bold text-lg leading-tight truncate">{entry.className}</h4>
-                        {gradeLabel && (
-                            <p className="text-sm text-secondary-text mt-0.5">{gradeLabel}</p>
-                        )}
+                        <h4 className="font-bold text-lg leading-tight truncate">{displayName}</h4>
                         <div className="flex items-center gap-1.5 mt-1.5 text-xs text-secondary-text">
                             <Users className="w-3.5 h-3.5" />
                             {entry.studentCount} student{entry.studentCount !== 1 ? 's' : ''}

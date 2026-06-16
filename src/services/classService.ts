@@ -1,4 +1,4 @@
-import { unwrapJoin } from '@/utils/displayUtils';
+import { formatClassDisplay, unwrapJoin } from '@/utils/displayUtils';
 import { supabase } from '@/lib/supabase';
 
 interface ClassData {
@@ -140,7 +140,7 @@ export async function getClasses(
                 return {
                     id: cls.id,
                     school_id: cls.school_id,
-                    name: cls.name,
+                    name: formatClassDisplay(cls),
                     grade_level: cls.grade_level,
                     section: cls.section,
                     capacity: cls.capacity,
@@ -327,7 +327,7 @@ export async function getTeacherTeachingLoad(
         for (const cls of formClassesRes.data ?? []) {
             classMap.set(cls.id, {
                 classId: cls.id,
-                className: cls.name,
+                className: formatClassDisplay(cls),
                 gradeLevel: cls.grade_level ?? undefined,
                 section: cls.section ?? undefined,
                 studentCount: 0,
@@ -352,7 +352,7 @@ export async function getTeacherTeachingLoad(
             if (!classMap.has(classId)) {
                 classMap.set(classId, {
                     classId,
-                    className: cls.name,
+                    className: formatClassDisplay(cls),
                     gradeLevel: cls.grade_level,
                     section: cls.section,
                     studentCount: 0,

@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { useAppStore } from '@/store';
 import { supabase } from '@/lib/supabase';
 import { riskDetectionService } from '@/services/riskDetectionService';
+import { buildClassDisplayMap } from '@/utils/displayUtils';
 
 interface RiskStudent {
   id: string;
@@ -71,10 +72,10 @@ export default function RiskAnalysisPage() {
       // Get classes
       const { data: classesData } = await supabase
         .from('classes')
-        .select('id, name')
+        .select('id, name, grade_level, section')
         .eq('school_id', user!.schoolId);
 
-      const classMap = new Map(classesData?.map((c) => [c.id, c.name]) || []);
+      const classMap = buildClassDisplayMap(classesData ?? []);
 
       // Get risk scores
       const { data: riskScores } = await supabase

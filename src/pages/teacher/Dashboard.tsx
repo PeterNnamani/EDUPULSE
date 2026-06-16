@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CalendarDays, ClipboardList, Users, AlertTriangle, BookOpen, TrendingUp, Plus, Loader } from 'lucide-react';
+import { CalendarDays, ClipboardList, Users, AlertTriangle, BookOpen, TrendingUp, Plus, Loader, ChevronDown } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAppStore } from '@/store';
 import { getTeacherClasses, getClassStudents } from '@/services/classService';
@@ -34,6 +34,7 @@ export default function TeacherDashboard() {
   const { user } = useAppStore();
   const navigate = useNavigate();
   const [classes, setClasses] = useState<TeacherClass[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [riskStudents, setRiskStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +52,9 @@ export default function TeacherDashboard() {
       try {
         const teacherClasses = await getTeacherClasses(user.schoolId, user.id);
         setClasses(teacherClasses);
+        if (teacherClasses.length > 0) {
+          setSelectedClassId(teacherClasses[0].id);
+        }
         setTotalStudents(teacherClasses.reduce((sum, cls) => sum + cls.students, 0));
 
         // Get teacher's assignments
@@ -125,6 +129,8 @@ export default function TeacherDashboard() {
     loadDashboardData();
   }, [user?.id, user?.schoolId]);
 
+  const selectedClass = classes.find((c) => c.id === selectedClassId) ?? classes[0] ?? null;
+
   return (
     <div className="space-y-6">
       {/* Welcome Banner */}
@@ -192,6 +198,9 @@ export default function TeacherDashboard() {
         >
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Your Classes</h3>
+            {!loading && classes.length > 1 && (
+              <span className="text-xs text-secondary-text">{classes.length} assigned</span>
+            )}
           </div>
           <div className="space-y-3">
             {loading ? (
@@ -199,21 +208,37 @@ export default function TeacherDashboard() {
                 <Loader className="w-5 h-5 animate-spin" />
               </div>
             ) : classes.length > 0 ? (
-              classes.map((cls) => (
-                <div key={cls.id} className="flex items-center gap-4 p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
-                  <div className="flex-1">
-                    <p className="font-medium">{cls.name}</p>
-                    <p className="text-sm text-secondary-text">{cls.students} students</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/attendance')}
-                    className="p-2 rounded-lg pill-active text-sm font-medium hover:opacity-80 transition"
+              <>
+                <div className="relative">
+                  <select
+                    value={selectedClassId || classes[0]?.id || ''}
+                    onChange={(e) => setSelectedClassId(e.target.value)}
+                    className="input-field w-full appearance-none pr-10"
                   >
-                    View Class
-                  </button>
+                    {classes.map((cls) => (
+                      <option key={cls.id} value={cls.id}>
+                        {cls.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-secondary-text pointer-events-none" />
                 </div>
-              ))
+                {selectedClass && (
+                  <div className="flex items-center gap-4 p-3 rounded-xl bg-secondary-bg dark:bg-dark-card">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{selectedClass.name}</p>
+                      <p className="text-sm text-secondary-text">{selectedClass.students} students</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate('/attendance')}
+                      className="p-2 rounded-lg pill-active text-sm font-medium hover:opacity-80 transition shrink-0"
+                    >
+                      View Class
+                    </button>
+                  </div>
+                )}
+              </>
             ) : (
               <p className="text-center text-secondary-text py-8">No classes assigned yet</p>
             )}
