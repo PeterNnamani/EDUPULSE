@@ -25,6 +25,7 @@ import {
   getNotificationItemsForRole,
   type UserPreferences,
 } from '@/services/userPreferencesService';
+import BulkImportPanel from '@/components/settings/BulkImportPanel';
 
 function ReadOnlyField({ label, value }: { label: string; value: string | number }) {
   return (
@@ -287,6 +288,10 @@ export default function SettingsPage() {
                 </div>
               )}
             </motion.div>
+          )}
+
+          {activeTab === 'import' && role === 'admin' && user?.schoolId && (
+            <BulkImportPanel schoolId={user.schoolId} />
           )}
 
           {activeTab === 'payments' && (
