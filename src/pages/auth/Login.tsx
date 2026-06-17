@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Eye, EyeOff, ArrowRight, ArrowLeft, User, Lock, Phone } from 'lucide-react';
 import { useAppStore } from '@/store';
 import { adminLogin, staffLogin, parentLogin } from '@/services/authService';
+import { queryClient } from '@/lib/react-query';
+import { prefetchSchoolData } from '@/hooks/queries/useSchoolData';
 import type { UserRole } from '@/types';
 import { dashboardPathForRole } from '@/config/routeAccess';
 import { unlockNotificationAudio } from '@/utils/playNotificationSound';
@@ -137,6 +139,7 @@ export default function Login() {
           phone: response.user.phone,
           photoUrl: response.user.photoUrl ?? undefined,
         });
+        prefetchSchoolData(queryClient, response.user.schoolId);
         finish({ role: 'admin' });
         return;
       }
@@ -197,6 +200,7 @@ export default function Login() {
         phone: response.user.phone,
         photoUrl: response.user.photoUrl ?? undefined,
       });
+      prefetchSchoolData(queryClient, response.user.schoolId);
 
       if (selectedRole === 'teacher' && response.user.schoolId) {
         const { teacherActivityService } = await import('@/services/teacherActivityService');

@@ -25,6 +25,9 @@ export function buildStaffTeachingMap(
 ): Record<string, StaffTeachingProfile> {
   const map: Record<string, StaffTeachingProfile> = {};
   const linkedSubjectByStaff = new Map<string, Set<string>>();
+  // (classId:subjectId) pairs that have an explicit teacher in class_subjects.
+  // These take precedence over the global staff_subjects inference below.
+  const explicitClassSubject = new Set<string>();
 
   const ensureStaff = (staffId: string) => {
     if (!map[staffId]) {
@@ -91,6 +94,8 @@ export function buildStaffTeachingMap(
       entry.subjects.push({ id: sub.id, name: sub.name });
     }
 
+    explicitClassSubject.add(`${cls.id}:${sub.id}`);
+
     if (!linkedSubjectByStaff.has(row.teacher_id)) {
       linkedSubjectByStaff.set(row.teacher_id, new Set());
     }
@@ -110,12 +115,18 @@ export function buildStaffTeachingMap(
 
       if (formClasses.length === 1) {
         const entry = formClasses[0];
-        if (!entry.subjects.some((s) => s.id === subjectId)) {
+        if (
+          !explicitClassSubject.has(`${entry.classId}:${subjectId}`) &&
+          !entry.subjects.some((s) => s.id === subjectId)
+        ) {
           entry.subjects.push({ id: subjectId, name });
         }
       } else if (formClasses.length > 1) {
         for (const entry of formClasses) {
-          if (!entry.subjects.some((s) => s.id === subjectId)) {
+          if (
+            !explicitClassSubject.has(`${entry.classId}:${subjectId}`) &&
+            !entry.subjects.some((s) => s.id === subjectId)
+          ) {
             entry.subjects.push({ id: subjectId, name });
           }
         }

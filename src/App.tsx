@@ -52,16 +52,28 @@ import MessagesPage from '@/pages/messages/MessagesPage';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import CleanUrlBar, { RestoreAppPath } from '@/components/CleanUrlBar';
 import { ROLES } from '@/config/routeAccess';
+import { queryClient } from '@/lib/react-query';
+import { prefetchSchoolData } from '@/hooks/queries/useSchoolData';
 
 function AppContent() {
   const { onboardingComplete, selectedRole, isAuthenticated, darkMode, user } = useAppStore();
-  const [showSplash, setShowSplash] = useState(true);
+  // Only play the full splash once per browser session, and never when the user
+  // is already authenticated (e.g. a page refresh) so warm loads go straight to
+  // the dashboard without a flash/double-render.
+  const [showSplash, setShowSplash] = useState(() => {
+    if (isAuthenticated) return false;
+    return sessionStorage.getItem('edupulse_splash_shown') !== '1';
+  });
 
   useEffect(() => {
+    if (!showSplash) return;
     // Give splash screen and intro audio time to play (3 seconds instead of 2.5)
-    const timer = setTimeout(() => setShowSplash(false), 3000);
+    const timer = setTimeout(() => {
+      sessionStorage.setItem('edupulse_splash_shown', '1');
+      setShowSplash(false);
+    }, 3000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [showSplash]);
 
   useEffect(() => {
     if (darkMode) {
@@ -70,6 +82,14 @@ function AppContent() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Warm the shared data cache on a refresh while already authenticated so the
+  // parent role aside, every menu opens instantly from cache.
+  useEffect(() => {
+    if (isAuthenticated && user?.role && user.role !== 'parent' && user.schoolId) {
+      prefetchSchoolData(queryClient, user.schoolId);
+    }
+  }, [isAuthenticated, user?.role, user?.schoolId]);
 
   if (showSplash) {
     return <SplashScreen />;

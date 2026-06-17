@@ -42,7 +42,7 @@ export const useAppStore = create<AppState>()(
         currentSession: null,
       },
       darkMode: false,
-      sidebarOpen: true,
+      sidebarOpen: false,
       selectedParentChildId: null,
       activePlanTier: null,
       featureAccessNonce: 0,
@@ -94,6 +94,10 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         onboardingComplete: state.onboardingComplete,
         darkMode: state.darkMode,
+        user: state.user,
+        isAuthenticated: state.isAuthenticated,
+        selectedRole: state.selectedRole,
+        school: state.school,
       }),
     }
   )

@@ -177,6 +177,26 @@ export default function Layout() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [hasShownWelcome, setHasShownWelcome] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(
+    () => (typeof window !== 'undefined' ? window.innerWidth >= 1024 : true)
+  );
+
+  // Track viewport so the sidebar drawer behaves as an overlay on mobile and a
+  // static column on desktop (independent of the mobile open/closed state).
+  useEffect(() => {
+    const onResize = () => setIsDesktop(window.innerWidth >= 1024);
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // On mobile, the drawer should start closed and close after any navigation so
+  // the selected page (Settings included) is fully visible, not hidden behind it.
+  useEffect(() => {
+    if (!isDesktop) {
+      useAppStore.setState({ sidebarOpen: false });
+    }
+  }, [isDesktop, location.pathname]);
 
   const { hasFeature, resolved: planResolved } = useFeatureAccess();
   const { showDutyFeatures, loading: dutyLoading } = useDutyAssignment();
@@ -338,8 +358,8 @@ export default function Layout() {
         {/* Sidebar */}
         <motion.aside
           initial={false}
-          animate={{ x: sidebarOpen ? 0 : '-100%' }}
-          className={`fixed lg:static top-16 lg:top-0 left-0 h-[calc(100vh-4rem)] lg:h-full w-72 lg:w-64 bg-white dark:bg-dark-bg border-r border-border dark:border-dark-border z-50 lg:z-0 lg:translate-x-0 transition-transform`}
+          animate={{ x: isDesktop || sidebarOpen ? 0 : '-100%' }}
+          className={`fixed lg:static top-16 lg:top-0 left-0 h-[calc(100vh-4rem)] lg:h-full w-72 max-w-[85vw] lg:w-64 lg:max-w-none bg-white dark:bg-dark-bg border-r border-border dark:border-dark-border z-50 lg:z-0 transition-transform`}
         >
           <div className="h-full flex flex-col">
             {/* Logo */}
@@ -392,7 +412,11 @@ export default function Layout() {
 
             {/* Settings & Logout */}
             <div className="p-4 border-t border-border dark:border-dark-border space-y-1">
-              <Link to="/settings" className="sidebar-item">
+              <Link
+                to="/settings"
+                onClick={() => window.innerWidth < 1024 && toggleSidebar()}
+                className="sidebar-item"
+              >
                 <Settings className="w-5 h-5" />
                 <span>Settings</span>
               </Link>

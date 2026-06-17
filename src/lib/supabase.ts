@@ -945,6 +945,61 @@ export type Database = {
           updated_at?: string;
         };
       };
+      class_subjects: {
+        Row: {
+          id: string;
+          school_id: string;
+          class_id: string;
+          subject_id: string;
+          teacher_id: string | null;
+          academic_term_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          school_id: string;
+          class_id: string;
+          subject_id: string;
+          teacher_id?: string | null;
+          academic_term_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          school_id?: string;
+          class_id?: string;
+          subject_id?: string;
+          teacher_id?: string | null;
+          academic_term_id?: string | null;
+          created_at?: string;
+        };
+      };
+      staff_subjects: {
+        Row: {
+          id: string;
+          school_id: string;
+          staff_id: string;
+          subject_id: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          school_id: string;
+          staff_id: string;
+          subject_id: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          school_id?: string;
+          staff_id?: string;
+          subject_id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
     };
   };
 };
@@ -967,3 +1022,5 @@ export type AcademicTerm = Database['public']['Tables']['academic_terms']['Row']
 export type AcademicSession = Database['public']['Tables']['academic_sessions']['Row'];
 export type Assignment = Database['public']['Tables']['assignments']['Row'];
 export type AssignmentSubmission = Database['public']['Tables']['assignment_submissions']['Row'];
+export type ClassSubject = Database['public']['Tables']['class_subjects']['Row'];
+export type StaffSubject = Database['public']['Tables']['staff_subjects']['Row'];

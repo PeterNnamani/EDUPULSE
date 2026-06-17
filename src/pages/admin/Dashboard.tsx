@@ -95,6 +95,9 @@ export default function AdminDashboard() {
   const [riskDistribution, setRiskDistribution] = useState<any[]>([]);
   const [performanceData, setPerformanceData] = useState<any[]>([]);
   const [recentActivity, setRecentActivity] = useState<ActivityLog[]>([]);
+  // Stays false until the first full data load completes, so we can hold a
+  // single loader and reveal the whole dashboard at once (no flip/flash).
+  const [dashboardReady, setDashboardReady] = useState(false);
 
   useEffect(() => {
     if (user?.schoolId) {
@@ -129,16 +132,43 @@ export default function AdminDashboard() {
     }
   }, [currentTerm]);
 
-  // Silent auto-refresh every 60 seconds
+  // Silent auto-refresh every 60 seconds, but only while the tab is visible so
+  // background tabs stop hammering the database. Refresh once on re-focus too.
   useEffect(() => {
     if (!schoolId) return;
 
-    const refreshInterval = setInterval(() => {
-      console.log('📊 Auto-refreshing dashboard data for schoolId:', schoolId);
-      fetchAllData();
-    }, 60000); // 60 seconds
+    let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
-    return () => clearInterval(refreshInterval);
+    const startPolling = () => {
+      if (refreshInterval) return;
+      refreshInterval = setInterval(() => {
+        fetchAllData();
+      }, 60000); // 60 seconds
+    };
+
+    const stopPolling = () => {
+      if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchAllData();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    if (document.visibilityState === 'visible') startPolling();
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [schoolId]);
 
   const getWeekNumber = (date: Date): number => {
@@ -176,6 +206,10 @@ export default function AdminDashboard() {
       console.log('✅ Dashboard: Data refresh completed');
     } catch (error) {
       console.error('❌ Dashboard: Error fetching data:', error);
+    } finally {
+      // Reveal the dashboard once (even on error, show whatever we have rather
+      // than an endless loader). Subsequent silent refreshes keep it visible.
+      setDashboardReady(true);
     }
   };
 
@@ -668,6 +702,44 @@ export default function AdminDashboard() {
     if (card.label === 'Interventions') return hasFeature('interventions');
     return true;
   });
+
+  // Hold a single branded loader until the first data load (and academic
+  // calendar) are ready, then render the whole dashboard at once.
+  if (!dashboardReady || calendarLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-6">
+        <div className="relative w-16 h-16">
+          <div className="absolute inset-0 rounded-full border-4 border-blue-500/15" />
+          <motion.div
+            className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-600"
+            animate={{ rotate: 360 }}
+            transition={{ repeat: Infinity, ease: 'linear', duration: 0.9 }}
+          />
+          <motion.div
+            className="absolute inset-2 rounded-full bg-blue-500/10"
+            animate={{ scale: [1, 0.85, 1], opacity: [0.6, 1, 0.6] }}
+            transition={{ repeat: Infinity, ease: 'easeInOut', duration: 1.4 }}
+          />
+        </div>
+        <div className="text-center">
+          <motion.p
+            className="text-lg font-semibold"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            Loading your dashboard
+          </motion.p>
+          <motion.p
+            className="text-sm text-secondary-text mt-1"
+            animate={{ opacity: [0.5, 1, 0.5] }}
+            transition={{ repeat: Infinity, ease: 'easeInOut', duration: 1.6 }}
+          >
+            Getting everything ready{user?.fullName ? `, ${user.fullName.split(' ')[0]}` : ''}…
+          </motion.p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

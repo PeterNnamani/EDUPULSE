@@ -1,13 +1,23 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Search, Filter, Edit2, Trash2, UserPlus, Copy, Check, Eye, EyeOff, BookOpen, X, AlertCircle } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
 import { createStaff, updateStaff } from '@/services/authService';
 import { notificationTriggerService } from '@/services/notificationTriggerService';
 import { supabase } from '@/lib/supabase';
-import { getInitialsFromName, formatClassDisplay, unwrapJoin } from '@/utils/displayUtils';
+import { getInitialsFromName, formatClassDisplay } from '@/utils/displayUtils';
 import StaffTeachingAssignments from '@/components/admin/StaffTeachingAssignments';
 import { buildStaffTeachingMap } from '@/utils/staffTeachingMap';
+import { assignSubjectTeacher } from '@/services/teachingAssignmentService';
+import {
+  schoolKeys,
+  useStaff,
+  useClassesRich,
+  useSubjects,
+  useStaffSubjects,
+  useClassSubjects,
+} from '@/hooks/queries/useSchoolData';
 
 interface Staff {
   id: string;
@@ -44,20 +54,16 @@ export default function StaffManagement() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showAssignClassModal, setShowAssignClassModal] = useState(false);
   const [showAssignSubjectModal, setShowAssignSubjectModal] = useState(false);
+  const [showAssignSubjectTeacherModal, setShowAssignSubjectTeacherModal] = useState(false);
+  const [selectedClassForTeaching, setSelectedClassForTeaching] = useState<string>('');
   const [loading, setLoading] = useState(false);
-  const [staffList, setStaffList] = useState<Staff[]>([]);
-  const [classList, setClassList] = useState<Class[]>([]);
-  const [subjectList, setSubjectList] = useState<Subject[]>([]);
-  const [staffSubjects, setStaffSubjects] = useState<Record<string, string[]>>({});
-  const [classSubjectRows, setClassSubjectRows] = useState<
-    Array<{
-      teacher_id: string | null;
-      class_id: string;
-      subject_id: string;
-      classes?: { id: string; name: string; grade_level?: string } | null;
-      subjects?: { id: string; name: string } | null;
-    }>
-  >([]);
+  const schoolId = user?.schoolId;
+  const queryClient = useQueryClient();
+  const { data: staffList = [] } = useStaff(schoolId) as { data?: Staff[] };
+  const { data: classList = [] } = useClassesRich(schoolId) as { data?: Class[] };
+  const { data: subjectList = [] } = useSubjects(schoolId) as { data?: Subject[] };
+  const { data: staffSubjects = {} } = useStaffSubjects(schoolId);
+  const { data: classSubjectRows = [] } = useClassSubjects(schoolId);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedPin, setCopiedPin] = useState(false);
   const [showPin, setShowPin] = useState(false);
@@ -94,17 +100,6 @@ export default function StaffManagement() {
     role: string;
   } | null>(null);
 
-  // Fetch staff list, classes, and assignments
-  useEffect(() => {
-    if (user?.schoolId) {
-      fetchStaff();
-      fetchClasses();
-      fetchSubjects();
-      fetchStaffSubjects();
-      fetchClassSubjects();
-    }
-  }, [user?.schoolId]);
-
   const staffTeachingMap = useMemo(
     () =>
       buildStaffTeachingMap(
@@ -116,118 +111,27 @@ export default function StaffManagement() {
     [classList, classSubjectRows, staffSubjects, subjectList]
   );
 
+  // These refresh helpers invalidate the shared React Query cache so the hooks
+  // above refetch. Call sites stay the same as the previous inline fetchers.
   const fetchStaff = async () => {
-    if (!user?.schoolId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('staff')
-        .select('*')
-        .eq('school_id', user.schoolId)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setStaffList(data || []);
-    } catch (error) {
-      console.error('Error fetching staff:', error);
-    }
+    await queryClient.invalidateQueries({ queryKey: schoolKeys.staff(schoolId || '') });
   };
 
   const fetchClasses = async () => {
-    if (!user?.schoolId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('classes')
-        .select(`
-          id,
-          name,
-          grade_level,
-          section,
-          class_teacher_id,
-          staff!class_teacher_id(full_name)
-        `)
-        .eq('school_id', user.schoolId)
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) throw error;
-
-      const formattedClasses = (data || []).map((cls: any) => ({
-        id: cls.id,
-        name: cls.name,
-        grade_level: cls.grade_level,
-        section: cls.section,
-        class_teacher_id: cls.class_teacher_id,
-        class_teacher_name: unwrapJoin<{ full_name?: string }>(cls.staff)?.full_name,
-      }));
-
-      setClassList(formattedClasses);
-    } catch (error) {
-      console.error('Error fetching classes:', error);
-    }
+    await queryClient.invalidateQueries({ queryKey: schoolKeys.classesRich(schoolId || '') });
+    await queryClient.invalidateQueries({ queryKey: schoolKeys.classes(schoolId || '') });
   };
 
   const fetchSubjects = async () => {
-    if (!user?.schoolId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('subjects')
-        .select('id, name')
-        .eq('school_id', user.schoolId)
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) throw error;
-      setSubjectList(data || []);
-    } catch (error) {
-      console.error('Error fetching subjects:', error);
-    }
+    await queryClient.invalidateQueries({ queryKey: schoolKeys.subjects(schoolId || '') });
   };
 
   const fetchClassSubjects = async () => {
-    if (!user?.schoolId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('class_subjects')
-        .select(
-          'teacher_id, class_id, subject_id, classes(id, name, grade_level), subjects(id, name)'
-        )
-        .eq('school_id', user.schoolId);
-
-      if (error) throw error;
-      setClassSubjectRows((data as unknown as typeof classSubjectRows) || []);
-    } catch (error) {
-      console.error('Error fetching class subjects:', error);
-      setClassSubjectRows([]);
-    }
+    await queryClient.invalidateQueries({ queryKey: schoolKeys.classSubjects(schoolId || '') });
   };
 
   const fetchStaffSubjects = async () => {
-    if (!user?.schoolId) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('staff_subjects')
-        .select('staff_id, subject_id')
-        .eq('school_id', user.schoolId);
-
-      if (error) throw error;
-
-      const mapping: Record<string, string[]> = {};
-      (data || []).forEach((record: any) => {
-        if (!mapping[record.staff_id]) {
-          mapping[record.staff_id] = [];
-        }
-        mapping[record.staff_id].push(record.subject_id);
-      });
-
-      setStaffSubjects(mapping);
-    } catch (error) {
-      console.error('Error fetching staff subjects:', error);
-    }
+    await queryClient.invalidateQueries({ queryKey: schoolKeys.staffSubjects(schoolId || '') });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -343,6 +247,79 @@ export default function StaffManagement() {
     setAssignSuccess('');
     await fetchSubjects();
     setShowAssignSubjectModal(true);
+  };
+
+  const handleAssignSubjectTeacherClick = async (staff: Staff) => {
+    setAssigningStaff(staff);
+    setSelectedClassForTeaching('');
+    setSelectedSubjects(new Set());
+    setAssignError('');
+    setAssignSuccess('');
+    await Promise.all([fetchClasses(), fetchSubjects(), fetchClassSubjects()]);
+    setShowAssignSubjectTeacherModal(true);
+  };
+
+  // When a class is picked, preselect the subjects this teacher already teaches
+  // in that class so the modal reflects the current state.
+  const handleSelectTeachingClass = (classId: string) => {
+    setSelectedClassForTeaching(classId);
+    if (!assigningStaff) {
+      setSelectedSubjects(new Set());
+      return;
+    }
+    const existing = classSubjectRows
+      .filter((row) => row.class_id === classId && row.teacher_id === assigningStaff.id)
+      .map((row) => row.subject_id);
+    setSelectedSubjects(new Set(existing));
+  };
+
+  const handleAssignSubjectTeacher = async () => {
+    if (!assigningStaff || !user?.schoolId) return;
+    if (!selectedClassForTeaching) {
+      setAssignError('Please select a class');
+      return;
+    }
+    if (selectedSubjects.size === 0) {
+      setAssignError('Please select at least one subject');
+      return;
+    }
+
+    setLoading(true);
+    setAssignError('');
+
+    try {
+      const result = await assignSubjectTeacher({
+        schoolId: user.schoolId,
+        classId: selectedClassForTeaching,
+        teacherId: assigningStaff.id,
+        subjectIds: Array.from(selectedSubjects),
+      });
+
+      if (!result.success) {
+        setAssignError(result.error || 'Failed to assign subject teacher');
+        return;
+      }
+
+      const className = classList.find((c) => c.id === selectedClassForTeaching)?.name || 'class';
+      setAssignSuccess(
+        `Assigned ${assigningStaff.full_name} to ${selectedSubjects.size} subject(s) in ${className}`
+      );
+
+      await fetchClassSubjects();
+
+      setTimeout(() => {
+        setShowAssignSubjectTeacherModal(false);
+        setAssigningStaff(null);
+        setSelectedClassForTeaching('');
+        setSelectedSubjects(new Set());
+        setAssignSuccess('');
+      }, 1500);
+    } catch (error) {
+      console.error('Error assigning subject teacher:', error);
+      setAssignError('Failed to assign subject teacher');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAssignClasses = async () => {
@@ -669,6 +646,13 @@ export default function StaffManagement() {
                               title="Assign Subjects"
                             >
                               <Filter className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleAssignSubjectTeacherClick(staff)}
+                              className="p-2 rounded-lg hover:bg-secondary-bg dark:hover:bg-dark-card transition-colors"
+                              title="Assign as subject teacher in a class"
+                            >
+                              <UserPlus className="w-4 h-4" />
                             </button>
                           </>
                         )}
@@ -1207,6 +1191,163 @@ export default function StaffManagement() {
                   <>
                     <BookOpen className="w-4 h-4" />
                     Assign Subjects
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Assign Subject Teacher to a Class Modal */}
+      {showAssignSubjectTeacherModal && assigningStaff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-2xl bg-white dark:bg-dark-bg rounded-2xl shadow-xl"
+          >
+            <div className="p-6 border-b border-border dark:border-gray-800 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Assign {assigningStaff.full_name} to a class</h2>
+                <p className="text-sm text-secondary-text mt-1">
+                  Pick a class and the subject(s) this teacher will teach there. Different teachers can teach different subjects in the same class.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAssignSubjectTeacherModal(false);
+                  setAssigningStaff(null);
+                  setSelectedClassForTeaching('');
+                  setSelectedSubjects(new Set());
+                }}
+                className="p-1 hover:bg-secondary-bg rounded"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {assignError && (
+                <div className="card bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-red-800 dark:text-red-200 text-sm">{assignError}</p>
+                  </div>
+                </div>
+              )}
+
+              {assignSuccess && (
+                <div className="card bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900">
+                  <div className="flex items-start gap-3">
+                    <Check className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    <p className="text-green-800 dark:text-green-200 text-sm">{assignSuccess}</p>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Class</label>
+                <select
+                  value={selectedClassForTeaching}
+                  onChange={(e) => handleSelectTeachingClass(e.target.value)}
+                  className="input-field w-full"
+                >
+                  <option value="">Select a class</option>
+                  {classList.map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {formatClassDisplay({ name: cls.name, grade_level: cls.grade_level, section: cls.section })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {!selectedClassForTeaching ? (
+                <div className="text-center py-10">
+                  <p className="text-secondary-text">Select a class to choose subjects</p>
+                </div>
+              ) : subjectList.length === 0 ? (
+                <div className="text-center py-10">
+                  <p className="text-secondary-text">No subjects available</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-80 overflow-y-auto">
+                  {subjectList.map((subject) => {
+                    const otherTeacher = classSubjectRows.find(
+                      (row) =>
+                        row.class_id === selectedClassForTeaching &&
+                        row.subject_id === subject.id &&
+                        row.teacher_id &&
+                        row.teacher_id !== assigningStaff.id
+                    );
+                    const otherTeacherName = otherTeacher
+                      ? staffList.find((s) => s.id === otherTeacher.teacher_id)?.full_name
+                      : null;
+                    return (
+                      <div
+                        key={subject.id}
+                        onClick={() => toggleSubjectSelection(subject.id)}
+                        className={`p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedSubjects.has(subject.id)
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                          : 'border-border dark:border-gray-700 hover:border-purple-300'
+                          }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${selectedSubjects.has(subject.id)
+                            ? 'border-purple-500 bg-purple-500'
+                            : 'border-gray-300 dark:border-gray-600'
+                            }`}>
+                            {selectedSubjects.has(subject.id) && (
+                              <Check className="w-3 h-3 text-white" />
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="font-semibold">{subject.name}</h3>
+                            {otherTeacherName && (
+                              <p className="text-xs text-secondary-text mt-0.5">
+                                Currently: {otherTeacherName}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="text-sm text-secondary-text pt-2">
+                {selectedSubjects.size > 0 && `${selectedSubjects.size} subject(s) selected`}
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-border dark:border-gray-800 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowAssignSubjectTeacherModal(false);
+                  setAssigningStaff(null);
+                  setSelectedClassForTeaching('');
+                  setSelectedSubjects(new Set());
+                }}
+                className="btn-secondary"
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAssignSubjectTeacher}
+                className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Assigning...
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    Assign Teacher
                   </>
                 )}
               </button>

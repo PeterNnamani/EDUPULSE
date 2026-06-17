@@ -1,15 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Search, Filter, MoreVertical, Edit2, Trash2, UserPlus, UserCheck, CreditCard, Download, Upload, Copy, Check } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/store';
 import {
-  getStudents,
   createStudentWithParent,
   updateStudent,
   STUDENT_STATUSES,
   normalizeStudentStatus,
 } from '@/services/studentService';
-import { getClasses } from '@/services/classService';
+import { schoolKeys, useStudents, useClasses } from '@/hooks/queries/useSchoolData';
 import VirtualAccountCard from '@/components/finance/VirtualAccountCard';
 import VirtualAccountSummary from '@/components/finance/VirtualAccountSummary';
 import { useFeatureAccess } from '@/hooks/useFeatureAccess';
@@ -62,10 +62,12 @@ export default function StudentManagement() {
   const { user } = useAppStore();
   const { hasFeature, resolved: planResolved } = useFeatureAccess();
   const virtualAccountsEnabled = planResolved && hasFeature('virtual_accounts');
+  const schoolId = user?.schoolId;
+  const queryClient = useQueryClient();
+  const { data: students = [] } = useStudents(schoolId) as { data?: any[] };
+  const { data: classes = [] } = useClasses(schoolId) as { data?: any[] };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [students, setStudents] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -132,29 +134,43 @@ export default function StudentManagement() {
     return map;
   }, [classes]);
 
-  // Load students and classes on mount; re-fetch VA index when plan feature resolves.
+  // Students and classes come from the shared React Query cache (prefetched at
+  // login). Only the virtual-account index is fetched here, and re-fetched when
+  // the plan feature resolves.
   useEffect(() => {
-    if (user?.schoolId) {
-      loadData();
-    }
-  }, [user?.schoolId, virtualAccountsEnabled]);
+    if (!schoolId) return;
+    let cancelled = false;
+    const loadVirtualAccounts = async () => {
+      try {
+        if (!virtualAccountsEnabled) {
+          if (!cancelled) setVirtualAccountsByStudentId({});
+          return;
+        }
+        const vaIndex = await monnifyService.getSchoolVirtualAccountIndex(schoolId);
+        if (!cancelled) setVirtualAccountsByStudentId(Object.fromEntries(vaIndex));
+      } catch (error) {
+        console.error('Error loading virtual accounts:', error);
+      }
+    };
+    void loadVirtualAccounts();
+    return () => {
+      cancelled = true;
+    };
+  }, [schoolId, virtualAccountsEnabled]);
 
   const loadData = async (options?: { silent?: boolean }) => {
-    if (!user?.schoolId) return;
-
+    if (!schoolId) return;
     if (!options?.silent) setLoading(true);
     try {
-      const schoolId = user.schoolId;
-      const [studentsData, classesData, vaIndex] = await Promise.all([
-        getStudents(schoolId),
-        getClasses(schoolId),
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: schoolKeys.students(schoolId) }),
+        queryClient.invalidateQueries({ queryKey: schoolKeys.classes(schoolId) }),
         virtualAccountsEnabled
-          ? monnifyService.getSchoolVirtualAccountIndex(schoolId)
-          : Promise.resolve(new Map<string, { accountNumber: string; bankName: string | null }>()),
+          ? monnifyService
+              .getSchoolVirtualAccountIndex(schoolId)
+              .then((vaIndex) => setVirtualAccountsByStudentId(Object.fromEntries(vaIndex)))
+          : Promise.resolve(),
       ]);
-      setStudents(studentsData);
-      setClasses(classesData);
-      setVirtualAccountsByStudentId(virtualAccountsEnabled ? Object.fromEntries(vaIndex) : {});
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -273,21 +289,23 @@ export default function StudentManagement() {
       if (result.success) {
         const normalizedStatus =
           normalizeStudentStatus(editingStudent.status) ?? editingStudent.status;
-        setStudents((prev) =>
-          prev.map((s) =>
-            s.id === editingStudent.id
-              ? {
-                  ...s,
-                  first_name: editingStudent.firstName,
-                  last_name: editingStudent.lastName,
-                  middle_name: editingStudent.middleName || null,
-                  gender: editingStudent.gender,
-                  date_of_birth: editingStudent.dateOfBirth || null,
-                  class_id: editingStudent.classId,
-                  status: normalizedStatus,
-                }
-              : s
-          )
+        queryClient.setQueryData(
+          schoolKeys.students(schoolId || ''),
+          (prev: any[] = []) =>
+            prev.map((s) =>
+              s.id === editingStudent.id
+                ? {
+                    ...s,
+                    first_name: editingStudent.firstName,
+                    last_name: editingStudent.lastName,
+                    middle_name: editingStudent.middleName || null,
+                    gender: editingStudent.gender,
+                    date_of_birth: editingStudent.dateOfBirth || null,
+                    class_id: editingStudent.classId,
+                    status: normalizedStatus,
+                  }
+                : s
+            )
         );
         setShowEditModal(false);
         setEditingStudent(null);
@@ -323,8 +341,10 @@ export default function StudentManagement() {
         alert(result.error || `Failed to ${statusToggleTarget.action} student`);
         return;
       }
-      setStudents((prev) =>
-        prev.map((s) => (s.id === statusToggleTarget.id ? { ...s, status: newStatus } : s))
+      queryClient.setQueryData(
+        schoolKeys.students(schoolId || ''),
+        (prev: any[] = []) =>
+          prev.map((s) => (s.id === statusToggleTarget.id ? { ...s, status: newStatus } : s))
       );
       setStatusToggleTarget(null);
       void loadData({ silent: true });
